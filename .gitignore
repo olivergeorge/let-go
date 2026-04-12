@@ -146,3 +146,6 @@ CLAUDE.md
 docs/
 .DS_Store
 .nrepl-port
+
+# Fennel benchmark dependencies
+benchmark/fennel/lib/

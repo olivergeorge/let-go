@@ -19,9 +19,14 @@ LETGO="$SCRIPT_DIR/letgo"
 BB="$(which bb 2>/dev/null || true)"
 CLJ="$(which clj 2>/dev/null || true)"
 JOKER="$(which joker 2>/dev/null || true)"
+GLJ="$(which glj 2>/dev/null || true)"
+FENNEL_RUNNER="$SCRIPT_DIR/fennel/run-fennel.sh"
+FENNEL=""
+[ -x "$FENNEL_RUNNER" ] && which fennel >/dev/null 2>&1 && FENNEL="$FENNEL_RUNNER"
 
 # Benchmarks to skip for specific runtimes (too slow or unsupported)
 JOKER_SKIP="tak transducers"
+GLJ_SKIP="fib tak"
 
 # Collect benchmark files
 BENCHMARKS=($(ls "$SCRIPT_DIR"/*.clj 2>/dev/null | sort))
@@ -41,6 +46,10 @@ JDK_VERSION=""
 JDK_SIZE=""
 JOKER_VERSION=""
 JOKER_SIZE=""
+GLJ_VERSION=""
+GLJ_SIZE=""
+FENNEL_VERSION=""
+FENNEL_SIZE=""
 
 if [ -n "$BB" ]; then
     BB_VERSION="$(bb --version 2>&1)"
@@ -69,6 +78,25 @@ if [ -n "$JOKER" ]; then
     JOKER_SIZE="$(ls -lh "$JOKER_PATH" 2>/dev/null | awk '{print $5}')"
 fi
 
+if [ -n "$GLJ" ]; then
+    GLJ_VERSION="$(glj --version 2>&1 | head -1)"
+    GLJ_PATH="$(readlink -f "$GLJ" 2>/dev/null || readlink "$GLJ" 2>/dev/null || echo "$GLJ")"
+    if [[ "$GLJ_PATH" == ../* ]]; then
+        GLJ_PATH="$(cd "$(dirname "$GLJ")" && cd "$(dirname "$GLJ_PATH")" && pwd)/$(basename "$GLJ_PATH")"
+    fi
+    GLJ_SIZE="$(ls -lh "$GLJ_PATH" 2>/dev/null | awk '{print $5}')"
+fi
+
+if [ -n "$FENNEL" ]; then
+    FENNEL_VERSION="$(fennel --version 2>&1)"
+    FENNEL_BIN="$(which fennel 2>/dev/null || true)"
+    FENNEL_BIN_PATH="$(readlink -f "$FENNEL_BIN" 2>/dev/null || readlink "$FENNEL_BIN" 2>/dev/null || echo "$FENNEL_BIN")"
+    if [[ "$FENNEL_BIN_PATH" == ../* ]]; then
+        FENNEL_BIN_PATH="$(cd "$(dirname "$FENNEL_BIN")" && cd "$(dirname "$FENNEL_BIN_PATH")" && pwd)/$(basename "$FENNEL_BIN_PATH")"
+    fi
+    FENNEL_SIZE="$(ls -lh "$FENNEL_BIN_PATH" 2>/dev/null | awk '{print $5}')"
+fi
+
 CPU_INFO="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || cat /proc/cpuinfo 2>/dev/null | grep 'model name' | head -1 | cut -d: -f2 | xargs || echo "unknown")"
 
 echo ""
@@ -77,6 +105,8 @@ echo "System: $(uname -ms), $CPU_INFO"
 echo "let-go: $LETGO_SIZE binary"
 [ -n "$BB" ] && echo "babashka: $BB_VERSION ($BB_SIZE binary)"
 [ -n "$JOKER" ] && echo "joker: $JOKER_VERSION ($JOKER_SIZE binary)"
+[ -n "$GLJ" ] && echo "glojure: $GLJ_VERSION ($GLJ_SIZE binary)"
+[ -n "$FENNEL" ] && echo "fennel: $FENNEL_VERSION ($FENNEL_SIZE binary, with cljlib)"
 [ -n "$CLJ" ] && echo "clojure: $CLJ_VERSION"
 [ -n "$CLJ" ] && echo "JDK: $JDK_VERSION ($JDK_SIZE)"
 echo ""
@@ -89,6 +119,8 @@ STARTUP_CMDS=("$LETGO -e nil")
 STARTUP_NAMES=("-n let-go")
 [ -n "$BB" ] && STARTUP_CMDS+=("bb -e nil") && STARTUP_NAMES+=("-n babashka")
 [ -n "$JOKER" ] && STARTUP_CMDS+=("joker -e nil") && STARTUP_NAMES+=("-n joker")
+[ -n "$GLJ" ] && STARTUP_CMDS+=("glj -e nil") && STARTUP_NAMES+=("-n glojure")
+[ -n "$FENNEL" ] && STARTUP_CMDS+=("$FENNEL -e nil") && STARTUP_NAMES+=("-n fennel")
 [ -n "$CLJ" ] && STARTUP_CMDS+=("clj -M -e nil") && STARTUP_NAMES+=("-n clojure")
 
 STARTUP_ARGS=(--warmup "$WARMUP" --runs "$RUNS" --export-json "$STARTUP_JSON")
@@ -124,6 +156,10 @@ BB_STARTUP_MEM=""
 [ -n "$BB" ] && BB_STARTUP_MEM=$(measure_mem "bb -e nil" "babashka" | tail -1)
 JOKER_STARTUP_MEM=""
 [ -n "$JOKER" ] && JOKER_STARTUP_MEM=$(measure_mem "joker -e nil" "joker" | tail -1)
+GLJ_STARTUP_MEM=""
+[ -n "$GLJ" ] && GLJ_STARTUP_MEM=$(measure_mem "glj -e nil" "glojure" | tail -1)
+FENNEL_STARTUP_MEM=""
+[ -n "$FENNEL" ] && FENNEL_STARTUP_MEM=$(measure_mem "$FENNEL -e nil" "fennel" | tail -1)
 CLJ_STARTUP_MEM=""
 [ -n "$CLJ" ] && CLJ_STARTUP_MEM=$(measure_mem "clj -M -e nil" "clojure" | tail -1)
 
@@ -134,6 +170,9 @@ BB_FIB_MEM=""
 [ -n "$BB" ] && BB_FIB_MEM=$(measure_mem "bb benchmark/fib.clj" "babashka" | tail -1)
 JOKER_FIB_MEM=""
 [ -n "$JOKER" ] && JOKER_FIB_MEM=$(measure_mem "joker benchmark/fib.clj" "joker" | tail -1)
+GLJ_FIB_MEM=""
+FENNEL_FIB_MEM=""
+[ -n "$FENNEL" ] && FENNEL_FIB_MEM=$(measure_mem "$FENNEL benchmark/fennel/fib.fnl" "fennel" | tail -1)
 CLJ_FIB_MEM=""
 [ -n "$CLJ" ] && CLJ_FIB_MEM=$(measure_mem "clj -M -e '(load-file \"benchmark/fib.clj\")'" "clojure" | tail -1)
 
@@ -144,6 +183,10 @@ BB_REDUCE_MEM=""
 [ -n "$BB" ] && BB_REDUCE_MEM=$(measure_mem "bb benchmark/reduce.clj" "babashka" | tail -1)
 JOKER_REDUCE_MEM=""
 [ -n "$JOKER" ] && JOKER_REDUCE_MEM=$(measure_mem "joker benchmark/reduce.clj" "joker" | tail -1)
+GLJ_REDUCE_MEM=""
+[ -n "$GLJ" ] && GLJ_REDUCE_MEM=$(measure_mem "glj benchmark/reduce.clj" "glojure" | tail -1)
+FENNEL_REDUCE_MEM=""
+[ -n "$FENNEL" ] && FENNEL_REDUCE_MEM=$(measure_mem "$FENNEL benchmark/fennel/reduce.fnl" "fennel" | tail -1)
 CLJ_REDUCE_MEM=""
 [ -n "$CLJ" ] && CLJ_REDUCE_MEM=$(measure_mem "clj -M -e '(load-file \"benchmark/reduce.clj\")'" "clojure" | tail -1)
 
@@ -166,6 +209,13 @@ for bench in "${BENCHMARKS[@]}"; do
     if [ -n "$JOKER" ] && ! echo "$JOKER_SKIP" | grep -qw "$name"; then
         CMDS+=("-n joker" "joker $bench")
     fi
+    if [ -n "$GLJ" ] && ! echo "$GLJ_SKIP" | grep -qw "$name"; then
+        CMDS+=("-n glojure" "glj $bench")
+    fi
+    FENNEL_BENCH="$SCRIPT_DIR/fennel/$(basename "$bench" .clj).fnl"
+    if [ -n "$FENNEL" ] && [ -f "$FENNEL_BENCH" ]; then
+        CMDS+=("-n fennel" "$FENNEL $FENNEL_BENCH")
+    fi
     [ -n "$CLJ" ] && CMDS+=("-n clojure" "clj -M -e '(load-file \"$bench\")'")
 
     hyperfine --warmup "$WARMUP" --runs "$RUNS" --export-json "$JSON" "${CMDS[@]}" 2>&1
@@ -179,6 +229,8 @@ RESULTS_FILE="$SCRIPT_DIR/results.md"
 # Determine which runtimes are available for column headers
 RUNTIME_NAMES=("let-go" "babashka")
 [ -n "$JOKER" ] && RUNTIME_NAMES+=("joker")
+[ -n "$GLJ" ] && RUNTIME_NAMES+=("glojure")
+[ -n "$FENNEL" ] && RUNTIME_NAMES+=("fennel")
 RUNTIME_NAMES+=("clojure JVM")
 NUM_RUNTIMES=${#RUNTIME_NAMES[@]}
 
@@ -207,9 +259,9 @@ would exceed reasonable time limits or use unsupported features (transducers).
 
 $header_row
 $sep_row
-| **Version** | — | $BB_VERSION | ${JOKER_VERSION:-} | $CLJ_VERSION |
-| **Platform** | Go bytecode VM | GraalVM native | Go tree-walk interpreter | JVM (HotSpot) |
-| **Binary/runtime size** | **$LETGO_SIZE** | $BB_SIZE | ${JOKER_SIZE:-—} | $JDK_SIZE |
+| **Version** | — | $BB_VERSION | ${JOKER_VERSION:-—} | ${GLJ_VERSION:-—} | ${FENNEL_VERSION:-—} | $CLJ_VERSION |
+| **Platform** | Go bytecode VM | GraalVM native | Go tree-walk interpreter | Go tree-walk interpreter | Lua VM + cljlib | JVM (HotSpot) |
+| **Binary/runtime size** | **$LETGO_SIZE** | $BB_SIZE | ${JOKER_SIZE:-—} | ${GLJ_SIZE:-—} | ${FENNEL_SIZE:-—} | $JDK_SIZE |
 
 ### Startup Time
 
@@ -255,9 +307,15 @@ MEM_SEP+="---|"
 
 HAS_JOKER_COL=""
 [ -n "$JOKER" ] && HAS_JOKER_COL="1"
+HAS_GLJ_COL=""
+[ -n "$GLJ" ] && HAS_GLJ_COL="1"
+HAS_FENNEL_COL=""
+[ -n "$FENNEL" ] && HAS_FENNEL_COL="1"
 
 python3 -c "
 has_joker = '$HAS_JOKER_COL' != ''
+has_glj = '$HAS_GLJ_COL' != ''
+has_fennel = '$HAS_FENNEL_COL' != ''
 
 def bold_min_row(label, vals):
     # vals is list of (value_str, numeric_or_none)
@@ -286,19 +344,25 @@ rows_data = [
     ('startup (nil)', [
         ('${LETGO_STARTUP_MEM}MB', parse_mb('${LETGO_STARTUP_MEM}')),
         ('${BB_STARTUP_MEM:-—}MB', parse_mb('${BB_STARTUP_MEM}')),
-    ] + ([('${JOKER_STARTUP_MEM:-—}MB', parse_mb('${JOKER_STARTUP_MEM}'))] if has_joker else []) + [
+    ] + ([('${JOKER_STARTUP_MEM:-—}MB', parse_mb('${JOKER_STARTUP_MEM}'))] if has_joker else [])
+      + ([('${GLJ_STARTUP_MEM:-—}MB', parse_mb('${GLJ_STARTUP_MEM}'))] if has_glj else [])
+      + ([('${FENNEL_STARTUP_MEM:-—}MB', parse_mb('${FENNEL_STARTUP_MEM}'))] if has_fennel else []) + [
         ('${CLJ_STARTUP_MEM:-—}MB', parse_mb('${CLJ_STARTUP_MEM}')),
     ]),
     ('fib(35)', [
         ('${LETGO_FIB_MEM}MB', parse_mb('${LETGO_FIB_MEM}')),
         ('${BB_FIB_MEM:-—}MB', parse_mb('${BB_FIB_MEM}')),
-    ] + ([('${JOKER_FIB_MEM:-—}MB', parse_mb('${JOKER_FIB_MEM}'))] if has_joker else []) + [
+    ] + ([('${JOKER_FIB_MEM:-—}MB', parse_mb('${JOKER_FIB_MEM}'))] if has_joker else [])
+      + ([('${GLJ_FIB_MEM:-—}MB', parse_mb('${GLJ_FIB_MEM}'))] if has_glj else [])
+      + ([('${FENNEL_FIB_MEM:-—}MB', parse_mb('${FENNEL_FIB_MEM}'))] if has_fennel else []) + [
         ('${CLJ_FIB_MEM:-—}MB', parse_mb('${CLJ_FIB_MEM}')),
     ]),
     ('reduce 1M', [
         ('${LETGO_REDUCE_MEM}MB', parse_mb('${LETGO_REDUCE_MEM}')),
         ('${BB_REDUCE_MEM:-—}MB', parse_mb('${BB_REDUCE_MEM}')),
-    ] + ([('${JOKER_REDUCE_MEM:-—}MB', parse_mb('${JOKER_REDUCE_MEM}'))] if has_joker else []) + [
+    ] + ([('${JOKER_REDUCE_MEM:-—}MB', parse_mb('${JOKER_REDUCE_MEM}'))] if has_joker else [])
+      + ([('${GLJ_REDUCE_MEM:-—}MB', parse_mb('${GLJ_REDUCE_MEM}'))] if has_glj else [])
+      + ([('${FENNEL_REDUCE_MEM:-—}MB', parse_mb('${FENNEL_REDUCE_MEM}'))] if has_fennel else []) + [
         ('${CLJ_REDUCE_MEM:-—}MB', parse_mb('${CLJ_REDUCE_MEM}')),
     ]),
 ]
@@ -307,6 +371,12 @@ header = '| Workload | let-go | babashka |'
 sep = '|---|---|---|'
 if has_joker:
     header += ' joker |'
+    sep += '---|'
+if has_glj:
+    header += ' glojure |'
+    sep += '---|'
+if has_fennel:
+    header += ' fennel |'
     sep += '---|'
 header += ' clojure JVM |'
 sep += '---|'
@@ -331,6 +401,8 @@ EOF
 PERF_HEADER="| Benchmark | let-go | babashka |"
 PERF_SEP="|---|---|---|"
 [ -n "$JOKER" ] && PERF_HEADER+=" joker |" && PERF_SEP+="---|"
+[ -n "$GLJ" ] && PERF_HEADER+=" glojure |" && PERF_SEP+="---|"
+[ -n "$FENNEL" ] && PERF_HEADER+=" fennel |" && PERF_SEP+="---|"
 PERF_HEADER+=" clojure JVM |"
 PERF_SEP+="---|"
 echo "$PERF_HEADER"
@@ -360,6 +432,8 @@ for r in d['results']:
     if cmd == 'let-go': results['letgo'] = (fmt(r['mean'], r['stddev']), r['mean'])
     elif cmd == 'babashka': results['bb'] = (fmt(r['mean'], r['stddev']), r['mean'])
     elif cmd == 'joker': results['joker'] = (fmt(r['mean'], r['stddev']), r['mean'])
+    elif cmd == 'glojure': results['glj'] = (fmt(r['mean'], r['stddev']), r['mean'])
+    elif cmd == 'fennel': results['fennel'] = (fmt(r['mean'], r['stddev']), r['mean'])
     elif cmd == 'clojure': results['clj'] = (fmt(r['mean'], r['stddev']), r['mean'])
 
 # Find winner (lowest mean) and let-go baseline
@@ -377,9 +451,15 @@ def cell(key):
     return f'{s}{tag}'
 
 has_joker_col = '$JOKER' != ''
+has_glj_col = '$GLJ' != ''
+has_fennel_col = '$FENNEL' != ''
 row = '| $name | ' + cell('letgo') + ' | ' + cell('bb') + ' |'
 if has_joker_col:
     row += ' ' + cell('joker') + ' |'
+if has_glj_col:
+    row += ' ' + cell('glj') + ' |'
+if has_fennel_col:
+    row += ' ' + cell('fennel') + ' |'
 row += ' ' + cell('clj') + ' |'
 print(row)
 "
