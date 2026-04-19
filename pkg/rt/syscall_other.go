@@ -181,6 +181,7 @@ func installSyscallNS() {
 	ns.Def("spawn-async", unsupported("spawn-async"))
 	ns.Def("pipe", unsupported("pipe"))
 	ns.Def("kill", unsupported("kill"))
+	ns.Def("signal-notify", unsupported("signal-notify"))
 	ns.Def("uname", unsupported("uname"))
 	ns.Def("setuid", unsupported("setuid"))
 	ns.Def("setgid", unsupported("setgid"))

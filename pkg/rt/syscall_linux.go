@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"syscall"
 
 	"github.com/nooga/let-go/pkg/vm"
@@ -273,9 +274,14 @@ func installSyscallNS() {
 		if err != nil {
 			return vm.NIL, fmt.Errorf("waitpid: %v", err)
 		}
+		sig := 0
+		if ws.Signaled() {
+			sig = int(ws.Signal())
+		}
 		return waitResultMapping.StructToRecord(WaitResult{
 			Pid:    rpid,
 			Status: ws.ExitStatus(),
+			Signal: sig,
 		}), nil
 	})
 
@@ -449,6 +455,40 @@ func installSyscallNS() {
 			vm.NewBoxed(NewIOHandle(r)),
 			vm.NewBoxed(NewIOHandle(w)),
 		}), nil
+	})
+
+	// syscall/signal-notify — (syscall/signal-notify ch sig...)
+	// Deliver received signals as Ints onto ch. Starts a Go goroutine that
+	// forwards from os/signal's channel until the target ch is closed.
+	signalNotifyFn, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) < 2 {
+			return vm.NIL, fmt.Errorf("syscall/signal-notify expects at least 2 args (ch sig...)")
+		}
+		ch, ok := vs[0].(vm.Chan)
+		if !ok {
+			return vm.NIL, fmt.Errorf("syscall/signal-notify expected Chan as first arg")
+		}
+		sigs := make([]os.Signal, 0, len(vs)-1)
+		for _, v := range vs[1:] {
+			n, ok := v.(vm.Int)
+			if !ok {
+				return vm.NIL, fmt.Errorf("syscall/signal-notify expected Int signal")
+			}
+			sigs = append(sigs, syscall.Signal(int(n)))
+		}
+		goCh := make(chan os.Signal, 8)
+		signal.Notify(goCh, sigs...)
+		go func() {
+			defer func() {
+				// Swallow panic if ch was closed while we're sending.
+				_ = recover()
+				signal.Stop(goCh)
+			}()
+			for s := range goCh {
+				ch <- vm.MakeInt(int(s.(syscall.Signal)))
+			}
+		}()
+		return vm.NIL, nil
 	})
 
 	// syscall/kill — (syscall/kill pid sig)
@@ -638,6 +678,7 @@ func installSyscallNS() {
 	ns.Def("spawn-async", spawnAsyncFn)
 	ns.Def("pipe", pipeFn)
 	ns.Def("kill", killFn)
+	ns.Def("signal-notify", signalNotifyFn)
 	ns.Def("getpid", getpidFn)
 	ns.Def("getuid", getuidFn)
 	ns.Def("getgid", getgidFn)

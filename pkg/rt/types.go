@@ -54,9 +54,12 @@ type LGURL struct {
 }
 
 // WaitResult is the struct behind syscall/waitpid return values.
+// Status is the exit code (0-255) for normal exits, -1 for signal deaths.
+// Signal is the terminating signal number (0 when not signal-killed).
 type WaitResult struct {
 	Pid    int `letgo:"pid"`
 	Status int `letgo:"status"`
+	Signal int `letgo:"signal"`
 }
 
 // UnameResult is the struct behind syscall/uname return values.
