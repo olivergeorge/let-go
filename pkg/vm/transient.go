@@ -121,6 +121,25 @@ func (t *TransientMap) ValueAtOr(key Value, notFound Value) Value {
 func (t *TransientMap) Count() Value  { return MakeInt(t.count) }
 func (t *TransientMap) RawCount() int { return t.count }
 
+func (t *TransientMap) Contains(key Value) Boolean {
+	if t.root == nil {
+		return FALSE
+	}
+	_, found := t.root.find(0, hashValue(key), key)
+	return Boolean(found)
+}
+
+func (t *TransientMap) Invoke(args []Value) (Value, error) {
+	switch len(args) {
+	case 1:
+		return t.ValueAt(args[0]), nil
+	case 2:
+		return t.ValueAtOr(args[0], args[1]), nil
+	}
+	return NIL, fmt.Errorf("transient map invoke expects 1 or 2 args")
+}
+func (t *TransientMap) Arity() int { return 1 }
+
 // TransientVector is a mutable version of ArrayVector/PersistentVector.
 type TransientVector struct {
 	edit  atomic.Bool
@@ -210,6 +229,38 @@ func (t *TransientVector) ValueAt(key Value) Value {
 	return t.array[int(idx)]
 }
 
+func (t *TransientVector) ValueAtOr(key Value, notFound Value) Value {
+	idx, ok := key.(Int)
+	if !ok || int(idx) < 0 || int(idx) >= len(t.array) {
+		return notFound
+	}
+	return t.array[int(idx)]
+}
+
+func (t *TransientVector) Contains(key Value) Boolean {
+	idx, ok := key.(Int)
+	if !ok {
+		return FALSE
+	}
+	return Boolean(int(idx) >= 0 && int(idx) < len(t.array))
+}
+
+func (t *TransientVector) Invoke(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return NIL, fmt.Errorf("transient vector invoke expects 1 arg")
+	}
+	idx, ok := args[0].(Int)
+	if !ok {
+		return NIL, fmt.Errorf("transient vector key must be Int")
+	}
+	i := int(idx)
+	if i < 0 || i >= len(t.array) {
+		return NIL, fmt.Errorf("index out of bounds: %d", i)
+	}
+	return t.array[i], nil
+}
+func (t *TransientVector) Arity() int { return 1 }
+
 func (t *TransientVector) Count() Value  { return MakeInt(len(t.array)) }
 func (t *TransientVector) RawCount() int { return len(t.array) }
 
@@ -238,3 +289,99 @@ func (t *theTransientVectorType) Box(bare interface{}) (Value, error) {
 }
 
 var TransientVectorType *theTransientVectorType = &theTransientVectorType{}
+
+// TransientSet is a mutable version of PersistentSet for batch ops.
+type TransientSet struct {
+	edit atomic.Bool
+	tm   *TransientMap // value is sentinel; reuse map machinery
+}
+
+var transientSetSentinel = Boolean(true)
+
+func NewTransientSet(s *PersistentSet) *TransientSet {
+	tm := &TransientMap{}
+	if s.impl != nil {
+		tm.root = s.impl.root
+		tm.count = s.impl.count
+	}
+	tm.edit.Store(true)
+	t := &TransientSet{tm: tm}
+	t.edit.Store(true)
+	return t
+}
+
+func (t *TransientSet) ensureEditable() error {
+	if !t.edit.Load() {
+		return fmt.Errorf("transient used after persistent! call")
+	}
+	return nil
+}
+
+func (t *TransientSet) Type() ValueType    { return TransientSetType }
+func (t *TransientSet) Unbox() interface{} { return t }
+func (t *TransientSet) String() string {
+	return fmt.Sprintf("<transient-set count=%d>", t.tm.count)
+}
+
+func (t *TransientSet) Conj(value Value) (*TransientSet, error) {
+	if err := t.ensureEditable(); err != nil {
+		return nil, err
+	}
+	_, _ = t.tm.Assoc(value, transientSetSentinel)
+	return t, nil
+}
+
+func (t *TransientSet) Disj(value Value) (*TransientSet, error) {
+	if err := t.ensureEditable(); err != nil {
+		return nil, err
+	}
+	_, _ = t.tm.Dissoc(value)
+	return t, nil
+}
+
+func (t *TransientSet) Persistent() *PersistentSet {
+	t.edit.Store(false)
+	t.tm.edit.Store(false)
+	return &PersistentSet{
+		impl: &PersistentMap{root: t.tm.root, count: t.tm.count},
+	}
+}
+
+func (t *TransientSet) ValueAt(key Value) Value {
+	if t.tm.Contains(key) {
+		return key
+	}
+	return NIL
+}
+
+func (t *TransientSet) ValueAtOr(key Value, notFound Value) Value {
+	if t.tm.Contains(key) {
+		return key
+	}
+	return notFound
+}
+
+func (t *TransientSet) Contains(key Value) Boolean { return t.tm.Contains(key) }
+
+func (t *TransientSet) Invoke(args []Value) (Value, error) {
+	if len(args) != 1 {
+		return NIL, fmt.Errorf("transient set invoke expects 1 arg")
+	}
+	return t.ValueAt(args[0]), nil
+}
+func (t *TransientSet) Arity() int { return 1 }
+
+func (t *TransientSet) Count() Value  { return MakeInt(t.tm.count) }
+func (t *TransientSet) RawCount() int { return t.tm.count }
+
+type theTransientSetType struct{}
+
+func (t *theTransientSetType) String() string     { return t.Name() }
+func (t *theTransientSetType) Type() ValueType    { return TypeType }
+func (t *theTransientSetType) Unbox() interface{} { return nil }
+func (t *theTransientSetType) Name() string       { return "let-go.lang.TransientSet" }
+func (t *theTransientSetType) Box(bare interface{}) (Value, error) {
+	return NIL, NewTypeError(bare, "can't be boxed as", t)
+}
+
+var TransientSetType *theTransientSetType = &theTransientSetType{}

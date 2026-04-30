@@ -56,10 +56,7 @@
 (def alter (fn [r f & args] (apply swap! r f args)))
 (def commute alter)
 (def ensure deref)
-;; tap> / add-tap / remove-tap — debug tap queue. No-op.
-(def tap> (fn [_] true))
-(def add-tap (fn [_] nil))
-(def remove-tap (fn [_] nil))
+;; tap>, add-tap, remove-tap are now built-in.
 ;; Java class-name aliases used in hierarchy tests
 (def String (type ""))
 (def clojure.lang.PersistentHashSet (type #{}))
@@ -81,7 +78,7 @@
 (def ancestors (fn [& _] #{}))
 (def parents (fn [& _] nil))
 (def isa? (fn [& args] (apply = (if (= (count args) 3) (rest args) args))))
-(def clojure.lang.IPending (type nil))          ; sentinel — no real IPending type
+(def clojure.lang.IPending (type (promise)))    ; let-go IPending ≡ Promise
 ;; Object shim: we don't have Java classes, but (instance? Object x) is used —
 ;; define as a ValueType placeholder that matches nothing.
 (def Object (type nil))

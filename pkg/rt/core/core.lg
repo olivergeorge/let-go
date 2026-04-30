@@ -314,7 +314,9 @@
        ([result] (rf result))
        ([result input]
         (reduce rf result (f input))))))
-  ([f xs] (apply concat (map f xs))))
+  ([f xs] (lazy-cat-seqs (map f xs)))
+  ([f c1 c2] (lazy-cat-seqs (map f c1 c2)))
+  ([f c1 c2 & colls] (lazy-cat-seqs (apply map f c1 c2 colls))))
 
 (defmacro ns [n & body]
   (let [emit-one (fn [forms req]
@@ -322,7 +324,7 @@
                      (symbol? req)
                      (conj forms (list 'use (list 'quote req)))
 
-                     (and (seq? req) (symbol? (first req)))
+                     (and (sequential? req) (symbol? (first req)))
                      (let [lib    (first req)
                            opts   (apply hash-map (rest req))
                            as     (:as opts)
@@ -349,13 +351,13 @@
 
                      :else forms))
         reqs     (mapcat (fn [form]
-                           (if (and (seq? form) (= :require (first form)))
+                           (if (and (sequential? form) (= :require (first form)))
                              (rest form)
                              '()))
                          body)
         req-forms (reduce emit-one [] reqs)
         legacy    (reduce (fn [acc form]
-                            (if (and (seq? form) (= 'quote (first form)) (symbol? (second form)))
+                            (if (and (sequential? form) (= 'quote (first form)) (symbol? (second form)))
                               (conj acc (list 'use form))
                               acc))
                           []
@@ -1262,7 +1264,7 @@
 ;; nth is a native Go builtin
 
 (defmacro doseq [bind & body]
-  ;; Parse binding vector into steps (same as for)
+  ;; Parse binding vector into [kind ...] steps preserving order.
   (let [steps (loop [b bind acc []]
                 (if (empty? b)
                   acc
@@ -1271,27 +1273,36 @@
                     (= (first b) :when)  (recur (drop 2 b) (conj acc [:when (second b)]))
                     (= (first b) :while) (recur (drop 2 b) (conj acc [:while (second b)]))
                     :else                (recur (drop 2 b) (conj acc [:bind (first b) (second b)])))))]
-    (letfn [(emit [ss]
+    ;; emit returns a form that, when executed, performs one logical step
+    ;; (running body or skipping/stopping) and recurs as needed. recform is
+    ;; the (recur ...) for the closest enclosing :bind, used to advance.
+    (letfn [(emit [ss recform]
               (if (empty? ss)
-                (cons 'do body)
+                (if recform
+                  `(do ~@body ~recform)
+                  (cons 'do body))
                 (let [step (first ss)
-                      rest-ss (next ss)
-                      inner (emit (or rest-ss []))]
+                      rest-ss (or (next ss) [])
+                      sub (emit rest-ss recform)]
                   (case (first step)
-                    :let   (list 'let (second step) inner)
-                    :when  (list 'when (second step) inner)
-                    :while inner ;; :while not fully supported yet
-                    :bind  (let [sym  (step 1)
-                                 coll (step 2)
-                                 seq-s (gensym "doseq_seq__")
-                                 loop-s (gensym "doseq_loop__")]
-                             `(let [~seq-s (seq ~coll)]
-                                (loop [~loop-s ~seq-s]
-                                  (when ~loop-s
-                                    (let [~sym (first ~loop-s)]
-                                      ~inner
-                                      (recur (next ~loop-s)))))))))))]
-      (emit steps))))
+                    :let   (list 'let (second step) sub)
+                    :when  (list 'if (second step) sub recform)
+                    :while (list 'when (second step) sub)
+                    :bind  (let [sym    (step 1)
+                                 coll   (step 2)
+                                 seq-s  (gensym "doseq_seq__")
+                                 loop-s (gensym "doseq_loop__")
+                                 nextrec (list 'recur (list 'next loop-s))
+                                 inner (emit rest-ss nextrec)
+                                 bind-form `(let [~seq-s (seq ~coll)]
+                                              (loop [~loop-s ~seq-s]
+                                                (when ~loop-s
+                                                  (let [~sym (first ~loop-s)]
+                                                    ~inner))))]
+                             (if recform
+                               (list 'do bind-form recform)
+                               bind-form))))))]
+      (emit steps nil))))
 
 ;; for — lazy list comprehension
 ;; (for [x xs, y ys, :let [z expr], :when pred, :while pred] body)
@@ -1435,7 +1446,7 @@
    (reduce #(max-key k %1 %2) (max-key k x y) more)))
 
 (defn counted? [coll]
-  (or (vector? coll) (map? coll) (list? coll) (string? coll)))
+  (or (vector? coll) (map? coll) (set? coll) (list? coll)))
 
 (defn associative? [coll]
   (or (vector? coll) (map? coll)))
@@ -1465,7 +1476,7 @@
         (cons x (flatten (rest s)))))))
 
 (defn seqable? [coll]
-  (or (nil? coll) (coll? coll) (string? coll) (seq? coll)))
+  (or (nil? coll) (coll? coll) (string? coll) (array? coll) (seq? coll)))
 
 (defn contains-val? [coll val]
   (some #(= val %) (vals coll)))

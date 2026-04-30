@@ -466,7 +466,11 @@ func (c *Context) compileForm(o vm.Value) error {
 				return c.compileForm(newform)
 			}
 
-			fvar := c.CurrentNS().Lookup(fnsym)
+			// Locals shadow macros: skip macro expansion if name is bound locally.
+			fvar := vm.Value(vm.NIL)
+			if c.lookupLocal(fnsym) < 0 {
+				fvar = c.CurrentNS().Lookup(fnsym)
+			}
 			if fvar != vm.NIL && fvar.(*vm.Var).IsMacro() {
 				nxt := lst.Next()
 				var argvec []vm.Value

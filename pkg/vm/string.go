@@ -97,8 +97,8 @@ func (l String) Cons(val Value) Seq {
 }
 
 func (l String) Seq() Seq {
-	if len(l) <= 1 {
-		return NIL
+	if len(l) == 0 {
+		return nil
 	}
 	ret := EmptyList
 	s := []rune(l)

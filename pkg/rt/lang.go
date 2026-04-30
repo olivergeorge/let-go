@@ -16,12 +16,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nooga/let-go/pkg/vm"
 )
 
 var nsRegistry map[string]*vm.Namespace
+
+var (
+	tapsMu sync.Mutex
+	taps   []vm.Fn
+)
 
 // nsAliases maps alternative namespace names to canonical names.
 // e.g. "clojure.core" → "core", "clojure.test" → "test", "clojure.string" → "string"
@@ -1402,11 +1408,14 @@ func installLangNS() {
 				}
 			}
 		}
-		sqbl, ok := vs[0].(vm.Sequable)
-		if !ok {
-			return vm.NIL, fmt.Errorf("seq expected Seqauble")
+		var n vm.Seq
+		if sqbl, ok := vs[0].(vm.Sequable); ok {
+			n = sqbl.Seq()
+		} else if s, ok := vs[0].(vm.Seq); ok {
+			n = s
+		} else {
+			return vm.NIL, fmt.Errorf("seq expected Seqable")
 		}
-		n := sqbl.Seq()
 		// Return nil for empty sequences (Clojure semantics)
 		if n == nil || n == vm.EmptyList {
 			return vm.NIL, nil
@@ -1418,6 +1427,13 @@ func installLangNS() {
 		if len(vs) != 1 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
 		}
+		switch vs[0].(type) {
+		case *vm.Nil, vm.String, *vm.TypedArray,
+			vm.ArrayVector, *vm.PersistentVector,
+			*vm.PersistentMap, *vm.PersistentSet,
+			*vm.SortedSet, *vm.SortedMap:
+			return vm.FALSE, nil
+		}
 		_, ok := vs[0].(vm.Seq)
 		return vm.Boolean(ok), nil
 	})
@@ -1425,6 +1441,10 @@ func installLangNS() {
 	isColl, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 1 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
+		}
+		switch vs[0].(type) {
+		case *vm.Nil, vm.String, *vm.TypedArray:
+			return vm.FALSE, nil
 		}
 		_, ok := vs[0].(vm.Collection)
 		return vm.Boolean(ok), nil
@@ -2833,6 +2853,8 @@ func installLangNS() {
 		switch v := vs[0].(type) {
 		case *vm.PersistentMap:
 			return vm.NewTransientMap(v), nil
+		case *vm.PersistentSet:
+			return vm.NewTransientSet(v), nil
 		case vm.ArrayVector:
 			return vm.NewTransientVector([]vm.Value(v)), nil
 		case vm.PersistentVector:
@@ -2852,6 +2874,8 @@ func installLangNS() {
 		case *vm.TransientMap:
 			return v.Persistent(), nil
 		case *vm.TransientVector:
+			return v.Persistent(), nil
+		case *vm.TransientSet:
 			return v.Persistent(), nil
 		default:
 			return vm.NIL, fmt.Errorf("persistent! not supported on %s", vs[0].Type().Name())
@@ -2877,6 +2901,15 @@ func installLangNS() {
 			}
 			return t, nil
 		case *vm.TransientVector:
+			var err error
+			for i := 1; i < len(vs); i++ {
+				t, err = t.Conj(vs[i])
+				if err != nil {
+					return vm.NIL, err
+				}
+			}
+			return t, nil
+		case *vm.TransientSet:
 			var err error
 			for i := 1; i < len(vs); i++ {
 				t, err = t.Conj(vs[i])
@@ -4139,6 +4172,50 @@ func installLangNS() {
 		return p, nil
 	})
 
+	// add-tap / remove-tap / tap> — debug tap queue (synchronous)
+	addTap, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("add-tap expects 1 arg")
+		}
+		fn, ok := vs[0].(vm.Fn)
+		if !ok {
+			return vm.NIL, fmt.Errorf("add-tap expected Fn")
+		}
+		tapsMu.Lock()
+		taps = append(taps, fn)
+		tapsMu.Unlock()
+		return vm.NIL, nil
+	})
+
+	removeTap, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("remove-tap expects 1 arg")
+		}
+		tapsMu.Lock()
+		for i, t := range taps {
+			if t == vs[0] {
+				taps = append(taps[:i], taps[i+1:]...)
+				break
+			}
+		}
+		tapsMu.Unlock()
+		return vm.NIL, nil
+	})
+
+	tapBang, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("tap> expects 1 arg")
+		}
+		tapsMu.Lock()
+		snap := make([]vm.Fn, len(taps))
+		copy(snap, taps)
+		tapsMu.Unlock()
+		for _, t := range snap {
+			_, _ = t.Invoke([]vm.Value{vs[0]})
+		}
+		return vm.TRUE, nil
+	})
+
 	// add-watch — (add-watch atom key fn)
 	addWatch, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 3 {
@@ -4797,6 +4874,9 @@ func installLangNS() {
 	ns.Def("promise", promisef)
 	ns.Def("deliver", deliver)
 	ns.Def("future*", futureStar)
+	ns.Def("add-tap", addTap)
+	ns.Def("remove-tap", removeTap)
+	ns.Def("tap>", tapBang)
 	ns.Def("add-watch", addWatch)
 	ns.Def("remove-watch", removeWatch)
 	ns.Def("alter-meta!", alterMeta)
