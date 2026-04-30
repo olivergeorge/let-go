@@ -285,8 +285,11 @@ func (l ArrayVector) Assoc(k Value, v Value) Associative {
 	if !ok {
 		return NIL
 	}
-	if ik < 0 || int(ik) >= len(new) {
+	if ik < 0 || int(ik) > len(new) {
 		return NIL
+	}
+	if int(ik) == len(new) {
+		return new.Conj(v).(Associative)
 	}
 	new[ik] = v
 	return new

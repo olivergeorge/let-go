@@ -17,6 +17,8 @@
   (testing "vector modification"
     (is (= [1 2 3 4] (conj [1 2 3] 4)))
     (is (= [1 :x 3] (assoc [1 2 3] 1 :x)))
+    (is (= [1 2 3 4] (assoc [1 2 3] 3 4)))
+    (is (= [1] (assoc [] 0 1)))
     (is (= [1 2] (pop [1 2 3])))
     (is (= 3 (peek [1 2 3])))))
 
@@ -111,4 +113,3 @@
   (testing "zipmap"
     (is (= {:a 1 :b 2} (zipmap [:a :b] [1 2])))
     (is (= {:a 1} (zipmap [:a :b] [1])))))  ; stops at shorter
-

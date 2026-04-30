@@ -25,7 +25,7 @@ type thePersistentMapType struct{}
 func (t *thePersistentMapType) String() string     { return t.Name() }
 func (t *thePersistentMapType) Type() ValueType    { return TypeType }
 func (t *thePersistentMapType) Unbox() interface{} { return reflect.TypeOf(t) }
-func (t *thePersistentMapType) Name() string        { return "let-go.lang.PersistentHashMap" }
+func (t *thePersistentMapType) Name() string       { return "let-go.lang.PersistentHashMap" }
 
 func (t *thePersistentMapType) Box(bare interface{}) (Value, error) {
 	if m, ok := bare.(*PersistentMap); ok {
@@ -586,7 +586,7 @@ func (m *PersistentMap) Assoc(key Value, val Value) Associative {
 	if addedLeaf {
 		newCount++
 	}
-	return &PersistentMap{count: newCount, root: newRoot}
+	return &PersistentMap{count: newCount, root: newRoot, meta: m.meta}
 }
 
 func (m *PersistentMap) Dissoc(key Value) Associative {
@@ -599,9 +599,12 @@ func (m *PersistentMap) Dissoc(key Value) Associative {
 		return m
 	}
 	if newRoot == nil {
-		return EmptyPersistentMap
+		if m.meta == nil {
+			return EmptyPersistentMap
+		}
+		return EmptyPersistentMap.WithMeta(m.meta).(*PersistentMap)
 	}
-	return &PersistentMap{count: m.count - 1, root: newRoot}
+	return &PersistentMap{count: m.count - 1, root: newRoot, meta: m.meta}
 }
 
 // --- Lookup interface ---

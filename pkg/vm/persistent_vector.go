@@ -321,6 +321,7 @@ func (v PersistentVector) Conj(val Value) Collection {
 			root:    newNode(),
 			tail:    []Value{val},
 			tailOff: 0,
+			meta:    v.meta,
 		}
 	}
 
@@ -335,6 +336,7 @@ func (v PersistentVector) Conj(val Value) Collection {
 			root:    v.root,
 			tail:    newTail,
 			tailOff: v.tailOff,
+			meta:    v.meta,
 		}
 	}
 
@@ -355,6 +357,7 @@ func (v PersistentVector) Conj(val Value) Collection {
 			root:    newRoot,
 			tail:    newTail,
 			tailOff: v.count,
+			meta:    v.meta,
 		}
 	}
 
@@ -367,6 +370,7 @@ func (v PersistentVector) Conj(val Value) Collection {
 		root:    newRoot,
 		tail:    newTail,
 		tailOff: v.count,
+		meta:    v.meta,
 	}
 }
 
@@ -475,8 +479,11 @@ func (v PersistentVector) Contains(key Value) Boolean {
 // Assoc implements Associative
 func (v PersistentVector) Assoc(key Value, val Value) Associative {
 	idx, ok := key.(Int)
-	if !ok || idx < 0 || int(idx) >= v.count {
+	if !ok || idx < 0 || int(idx) > v.count {
 		return NIL
+	}
+	if int(idx) == v.count {
+		return v.Conj(val).(Associative)
 	}
 
 	if int(idx) >= v.tailOff {
@@ -489,6 +496,7 @@ func (v PersistentVector) Assoc(key Value, val Value) Associative {
 			root:    v.root,
 			tail:    newTail,
 			tailOff: v.tailOff,
+			meta:    v.meta,
 		}
 	}
 
@@ -498,6 +506,7 @@ func (v PersistentVector) Assoc(key Value, val Value) Associative {
 		root:    v.doAssoc(v.root, v.shift, int(idx), val),
 		tail:    v.tail,
 		tailOff: v.tailOff,
+		meta:    v.meta,
 	}
 }
 

@@ -38,3 +38,11 @@
     (is (= [1 2] (with-meta [1 2] {:x 1})))
     (is (= (with-meta [1 2] {:a 1}) (with-meta [1 2] {:b 2})))
     (is (= {:a 1} (with-meta {:a 1} {:source "test"})))))
+
+(deftest assoc-preserves-metadata
+  (testing "assoc preserves metadata on maps and vectors"
+    (let [m (with-meta {:a 1} {:source "test"})
+          v (with-meta [1] {:tag :vec})]
+      (is (= {:source "test"} (meta (assoc m :b 2))))
+      (is (= {:tag :vec} (meta (assoc v 0 2))))
+      (is (= {:tag :vec} (meta (assoc v 1 3)))))))

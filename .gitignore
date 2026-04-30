@@ -150,3 +150,4 @@ docs/
 # Fennel benchmark dependencies
 benchmark/fennel/lib/
 benchmark/gloat/bin/
+AGENTS.md

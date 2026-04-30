@@ -1130,6 +1130,9 @@ func installLangNS() {
 		ret := coll
 		for i := 1; i < len(vs); i += 2 {
 			ret = ret.Assoc(vs[i], vs[i+1])
+			if ret == vm.NIL {
+				return vm.NIL, fmt.Errorf("assoc failed for key %s", vs[i].String())
+			}
 		}
 		return ret, nil
 	})
@@ -3514,11 +3517,11 @@ func installLangNS() {
 
 		// Shared mutable state
 		type tstate struct {
-			src      vm.Seq
-			buf      []vm.Value // output items waiting to be yielded
-			xf       vm.Fn      // the xform'd reducing fn
-			done     bool       // completion called
-			stopped  bool       // early termination via reduced
+			src     vm.Seq
+			buf     []vm.Value // output items waiting to be yielded
+			xf      vm.Fn      // the xform'd reducing fn
+			done    bool       // completion called
+			stopped bool       // early termination via reduced
 		}
 
 		// The base reducing fn just appends to the buffer.
@@ -4535,21 +4538,27 @@ func installLangNS() {
 
 	// ratio? — test if value is Ratio
 	isRatio, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.FALSE, nil }
+		if len(vs) != 1 {
+			return vm.FALSE, nil
+		}
 		return vm.Boolean(vm.IsRatio(vs[0])), nil
 	})
 	ns.Def("ratio?", isRatio)
 
 	// decimal? — test if value is BigDecimal
 	isDecimal, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.FALSE, nil }
+		if len(vs) != 1 {
+			return vm.FALSE, nil
+		}
 		return vm.Boolean(vm.IsBigDecimal(vs[0])), nil
 	})
 	ns.Def("decimal?", isDecimal)
 
 	// sorted? — test if value is a sorted collection
 	isSorted, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.FALSE, nil }
+		if len(vs) != 1 {
+			return vm.FALSE, nil
+		}
 		switch vs[0].(type) {
 		case *vm.SortedMap, *vm.SortedSet:
 			return vm.TRUE, nil
@@ -4560,7 +4569,9 @@ func installLangNS() {
 
 	// map? — test if value is a map (hash or sorted)
 	isMap, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.FALSE, nil }
+		if len(vs) != 1 {
+			return vm.FALSE, nil
+		}
 		switch vs[0].(type) {
 		case *vm.PersistentMap, *vm.SortedMap:
 			return vm.TRUE, nil
@@ -4571,7 +4582,9 @@ func installLangNS() {
 
 	// set? — test if value is a set (hash or sorted)
 	isSet, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.FALSE, nil }
+		if len(vs) != 1 {
+			return vm.FALSE, nil
+		}
 		switch vs[0].(type) {
 		case *vm.PersistentSet, *vm.SortedSet:
 			return vm.TRUE, nil
@@ -4582,7 +4595,9 @@ func installLangNS() {
 
 	// reversible? — test if value supports rseq
 	isReversible, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.FALSE, nil }
+		if len(vs) != 1 {
+			return vm.FALSE, nil
+		}
 		switch vs[0].(type) {
 		case vm.ArrayVector, vm.PersistentVector, *vm.SortedMap, *vm.SortedSet:
 			return vm.TRUE, nil
@@ -4593,19 +4608,27 @@ func installLangNS() {
 
 	// rseq — reverse seq for sorted collections and vectors
 	rseqf, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.NIL, fmt.Errorf("wrong number of arguments") }
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments")
+		}
 		switch v := vs[0].(type) {
 		case *vm.SortedMap:
 			s := v.RSeq()
-			if s == vm.EmptyList { return vm.NIL, nil }
+			if s == vm.EmptyList {
+				return vm.NIL, nil
+			}
 			return s, nil
 		case *vm.SortedSet:
 			s := v.RSeq()
-			if s == vm.EmptyList { return vm.NIL, nil }
+			if s == vm.EmptyList {
+				return vm.NIL, nil
+			}
 			return s, nil
 		case vm.ArrayVector:
 			n := len(v)
-			if n == 0 { return vm.NIL, nil }
+			if n == 0 {
+				return vm.NIL, nil
+			}
 			var s vm.Seq = vm.EmptyList
 			for i := 0; i < n; i++ {
 				s = vm.NewCons(v[i], s)
@@ -4613,7 +4636,9 @@ func installLangNS() {
 			return s, nil
 		case vm.PersistentVector:
 			n := v.RawCount()
-			if n == 0 { return vm.NIL, nil }
+			if n == 0 {
+				return vm.NIL, nil
+			}
 			var s vm.Seq = vm.EmptyList
 			for i := 0; i < n; i++ {
 				s = vm.NewCons(v.ValueAt(vm.MakeInt(i)), s)
@@ -4626,7 +4651,9 @@ func installLangNS() {
 
 	// numerator — return numerator of a Ratio
 	numeratorf, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.NIL, fmt.Errorf("wrong number of arguments") }
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments")
+		}
 		if r, ok := vs[0].(*vm.Ratio); ok {
 			num := r.Val().Num()
 			return vm.MaybeDowngrade(new(big.Int).Set(num)), nil
@@ -4637,7 +4664,9 @@ func installLangNS() {
 
 	// denominator — return denominator of a Ratio
 	denominatorf, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.NIL, fmt.Errorf("wrong number of arguments") }
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments")
+		}
 		if r, ok := vs[0].(*vm.Ratio); ok {
 			den := r.Val().Denom()
 			return vm.MaybeDowngrade(new(big.Int).Set(den)), nil
@@ -4648,7 +4677,9 @@ func installLangNS() {
 
 	// bigdec — coerce to BigDecimal
 	bigdecf, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.NIL, fmt.Errorf("wrong number of arguments") }
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments")
+		}
 		switch v := vs[0].(type) {
 		case *vm.BigDecimal:
 			return v, nil
@@ -4664,7 +4695,9 @@ func installLangNS() {
 			return vm.NewBigDecimalFromFloat64(f), nil
 		case vm.String:
 			bd, ok := vm.NewBigDecimalFromString(string(v))
-			if !ok { return vm.NIL, fmt.Errorf("cannot parse bigdec: %s", v) }
+			if !ok {
+				return vm.NIL, fmt.Errorf("cannot parse bigdec: %s", v)
+			}
 			return bd, nil
 		}
 		return vm.NIL, fmt.Errorf("cannot coerce %s to bigdec", vs[0].Type().Name())
@@ -4673,7 +4706,9 @@ func installLangNS() {
 
 	// rationalize — convert to Ratio
 	rationalizef, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 1 { return vm.NIL, fmt.Errorf("wrong number of arguments") }
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments")
+		}
 		switch v := vs[0].(type) {
 		case *vm.Ratio:
 			return v, nil

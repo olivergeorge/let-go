@@ -28,94 +28,92 @@ const memLimitBytes = 512 * 1024 * 1024
 // knownFailing lists test names (filename stems) that are known to fail.
 // Tests that pass but appear here will cause an error so the list stays current.
 var knownFailing = map[string]bool{
-	"assoc":            true, // vector assoc, meta propagation
-	"assoc_bang":       true, // transient assoc edge cases
-	"atom":             true, // atom validator/meta edge cases
-	"bigint":           true, // BigInt promotion at Long range boundary
-	"binding":          true, // thread binding propagation to futures
-	"bound_fn":         true, // bound-fn shim doesn't propagate dyn vars
-	"bound_fn_star":    true, // bound-fn* shim is identity
-	"derive":           true, // hierarchy stub has no real behavior
-	"descendants":      true, // hierarchy stub has no real behavior
-	"disj_bang":        true, // disj! shim falls through to disj
-	"dissoc":           true, // dissoc on records has quirky behavior
-	"empty":            true, // empty on deftype/non-coll edge cases
-	"key":              true, // (key nil) doesn't throw
-	"plus_squote":      true, // +' BigInt promotion at Long boundary
-	"realized_qmark":   true, // realized? semantics mismatch
-	"star_squote":      true, // *' BigInt promotion at Long boundary
-	"underive":         true, // hierarchy stub returns empty
-	"val":              true, // (val nil) doesn't throw
-	"with_precision":   true, // with-precision is a no-op; results don't round
-	"byte":             true, // byte range overflow
-	"case":             true, // case macro complex matching
-	"coll_qmark":       true, // (coll? (range)) not recognized
-	"compare":          true, // compare cross-type issues
-	"conj":             true, // conj arity/nil edge cases
-	"conj_bang":        true, // transient conj edge cases
-	"counted_qmark":    true, // counted? edge cases (hash-set, nil, strings)
-	"dec":              true, // dec overflow/type coercion
-	"disj":             true, // disj edge cases
-	"double_qmark":     true, // no float32/float64 distinction
-	"drop":             true, // (drop 5 nil) → nil not ()
-	"drop_while":       true, // (drop-while pred nil) → nil not ()
-	"empty_qmark":      true, // empty? on list containing nil
-	"eq":               true, // identical?-based eq function
-	"even_qmark":       true, // even? on float
-	"float":            true, // BigDecimal edge cases
-	"identical_qmark":  true, // identical? on boxed values
-	"ifn_qmark":        true, // ifn? edge cases
-	"inc":              true, // overflow untested assertion
-	"int":              true, // int overflow bounds
-	"intern":           true, // intern var binding
-	"juxt":             true, // juxt composition edge cases
-	"list_qmark":       true, // seq types report as list
-	"max":              true, // max with NaN
-	"merge":            true, // merge with nil/meta
-	"min":              true, // min with NaN
-	"min_key":          true, // min-key edge cases
-	"minus":            true, // overflow not detected
-	"mod":              true, // mod NaN/ratio edge cases
-	"nnext":            true, // map ordering
-	"not_empty":        true, // not-empty on list containing nil
-	"not_eq":           true, // identical?-based eq within not_eq
-	"nth":              true, // nth out-of-bounds doesn't throw
-	"nthnext":          true, // nthnext on various types
-	"num":              true, // num edge cases
-	"odd_qmark":        true, // odd? on float
-	"parse_uuid":       true, // UUID parsing tolerance
-	"partial":          true, // lazy evaluation edge case
-	"peek":             true, // peek on cons
-	"persistent_bang":  true, // persistent! edge cases
-	"plus":             true, // overflow not detected
-	"pr_str":           true, // pr-str formatting
-	"print_str":        true, // int-as-float formatting
-	"println_str":      true, // int-as-float formatting
-	"prn_str":          true, // int-as-float formatting
-	"quot":             true, // quot NaN/ratio edge cases
-	"rand_nth":         true, // rand-nth on various types
-	"random_sample":    true, // random-sample edge cases
-	"random_uuid":      true, // UUID type changes
-	"rational_qmark":   true, // rational? edge cases
-	"rationalize":      true, // rationalize precision
-	"reduce":           true, // reduce interop edge cases
-	"rem":              true, // rem NaN/ratio edge cases
-	"seq_qmark":        true, // seq? returns true for non-seq types
-	"seqable_qmark":    true, // object-array not supported
-	"short":            true, // short coercion
-	"slash":            true, // division edge cases
-	"sort":             true, // sort edge cases
-	"sort_by":          true, // sort-by edge cases
-	"star":             true, // overflow not detected
-	"str":              true, // str reader conditional
-	"symbol":           true, // symbol coercion
-	"take_nth":         true, // take-nth edge cases
-	"update":           true, // update edge cases
-	"uuid_qmark":       true, // UUID type predicate
-	"vec":              true, // vec of empty string, vector assoc
-	"when_first":       true, // when-first edge cases
-	"when_let":         true, // when-let macroexpand test
-	"zero_qmark":       true, // zero? type checking
+	"assoc_bang":      true, // transient assoc edge cases
+	"atom":            true, // atom validator/meta edge cases
+	"bigint":          true, // BigInt promotion at Long range boundary
+	"binding":         true, // thread binding propagation to futures
+	"bound_fn":        true, // bound-fn shim doesn't propagate dyn vars
+	"bound_fn_star":   true, // bound-fn* shim is identity
+	"derive":          true, // hierarchy stub has no real behavior
+	"descendants":     true, // hierarchy stub has no real behavior
+	"disj_bang":       true, // disj! shim falls through to disj
+	"dissoc":          true, // dissoc on records has quirky behavior
+	"empty":           true, // empty on deftype/non-coll edge cases
+	"key":             true, // (key nil) doesn't throw
+	"plus_squote":     true, // +' BigInt promotion at Long boundary
+	"realized_qmark":  true, // realized? semantics mismatch
+	"star_squote":     true, // *' BigInt promotion at Long boundary
+	"underive":        true, // hierarchy stub returns empty
+	"val":             true, // (val nil) doesn't throw
+	"with_precision":  true, // with-precision is a no-op; results don't round
+	"byte":            true, // byte range overflow
+	"case":            true, // case macro complex matching
+	"coll_qmark":      true, // (coll? (range)) not recognized
+	"compare":         true, // compare cross-type issues
+	"conj":            true, // conj arity/nil edge cases
+	"conj_bang":       true, // transient conj edge cases
+	"counted_qmark":   true, // counted? edge cases (hash-set, nil, strings)
+	"dec":             true, // dec overflow/type coercion
+	"disj":            true, // disj edge cases
+	"double_qmark":    true, // no float32/float64 distinction
+	"drop":            true, // (drop 5 nil) → nil not ()
+	"drop_while":      true, // (drop-while pred nil) → nil not ()
+	"empty_qmark":     true, // empty? on list containing nil
+	"eq":              true, // identical?-based eq function
+	"even_qmark":      true, // even? on float
+	"float":           true, // BigDecimal edge cases
+	"identical_qmark": true, // identical? on boxed values
+	"ifn_qmark":       true, // ifn? edge cases
+	"inc":             true, // overflow untested assertion
+	"int":             true, // int overflow bounds
+	"intern":          true, // intern var binding
+	"juxt":            true, // juxt composition edge cases
+	"list_qmark":      true, // seq types report as list
+	"max":             true, // max with NaN
+	"merge":           true, // merge with nil/meta
+	"min":             true, // min with NaN
+	"min_key":         true, // min-key edge cases
+	"minus":           true, // overflow not detected
+	"mod":             true, // mod NaN/ratio edge cases
+	"nnext":           true, // map ordering
+	"not_empty":       true, // not-empty on list containing nil
+	"not_eq":          true, // identical?-based eq within not_eq
+	"nth":             true, // nth out-of-bounds doesn't throw
+	"nthnext":         true, // nthnext on various types
+	"num":             true, // num edge cases
+	"odd_qmark":       true, // odd? on float
+	"parse_uuid":      true, // UUID parsing tolerance
+	"partial":         true, // lazy evaluation edge case
+	"peek":            true, // peek on cons
+	"persistent_bang": true, // persistent! edge cases
+	"plus":            true, // overflow not detected
+	"pr_str":          true, // pr-str formatting
+	"print_str":       true, // int-as-float formatting
+	"println_str":     true, // int-as-float formatting
+	"prn_str":         true, // int-as-float formatting
+	"quot":            true, // quot NaN/ratio edge cases
+	"rand_nth":        true, // rand-nth on various types
+	"random_sample":   true, // random-sample edge cases
+	"random_uuid":     true, // UUID type changes
+	"rational_qmark":  true, // rational? edge cases
+	"rationalize":     true, // rationalize precision
+	"reduce":          true, // reduce interop edge cases
+	"rem":             true, // rem NaN/ratio edge cases
+	"seq_qmark":       true, // seq? returns true for non-seq types
+	"seqable_qmark":   true, // object-array not supported
+	"short":           true, // short coercion
+	"slash":           true, // division edge cases
+	"sort":            true, // sort edge cases
+	"sort_by":         true, // sort-by edge cases
+	"star":            true, // overflow not detected
+	"str":             true, // str reader conditional
+	"symbol":          true, // symbol coercion
+	"take_nth":        true, // take-nth edge cases
+	"update":          true, // update edge cases
+	"uuid_qmark":      true, // UUID type predicate
+	"vec":             true, // vec of empty string, vector assoc
+	"when_first":      true, // when-first edge cases
+	"when_let":        true, // when-let macroexpand test
 }
 
 // suiteCounters tracks aggregate assertion counts across the entire suite.
@@ -213,9 +211,9 @@ func TestClojureTestSuite(t *testing.T) {
 
 // compatTestResult carries the outcome of a single compat test back from its goroutine.
 type compatTestResult struct {
-	err      error  // non-nil for compile/runtime errors
-	isPanic  bool   // true if err came from a recovered panic
-	outcome  bool   // test pass/fail (only valid when err == nil)
+	err      error // non-nil for compile/runtime errors
+	isPanic  bool  // true if err came from a recovered panic
+	outcome  bool  // test pass/fail (only valid when err == nil)
 	counters vm.Value
 }
 
@@ -257,8 +255,8 @@ func currentAlloc() uint64 {
 // e.g. "clojure-test-suite/test/clojure/core_test/abs.cljc" → "clojure.core-test.abs"
 func nsNameFromCompatPath(filename string) string {
 	base := strings.TrimSuffix(filepath.Base(filename), ".cljc")
-	dir := filepath.Base(filepath.Dir(filename))                    // core_test
-	parent := filepath.Base(filepath.Dir(filepath.Dir(filename)))   // clojure
+	dir := filepath.Base(filepath.Dir(filename))                  // core_test
+	parent := filepath.Base(filepath.Dir(filepath.Dir(filename))) // clojure
 	return parent + "." + strings.ReplaceAll(dir, "_", "-") + "." + strings.ReplaceAll(base, "_", "-")
 }
 

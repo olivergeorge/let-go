@@ -27,6 +27,9 @@
   (testing "zero? pos? neg?"
     (is (zero? 0))
     (is (not (zero? 1)))
+    (is (= :caught (try (zero? nil) (catch e :caught))))
+    (is (= :caught (try (zero? false) (catch e :caught))))
+    (is (= :caught (try (zero? true) (catch e :caught))))
     (is (pos? 1))
     (is (not (pos? 0)))
     (is (not (pos? -1)))
@@ -98,4 +101,3 @@
     (is (contains? [1 2 3] 2))
     (is (not (contains? [1 2 3] 3)))  ; index 3 doesn't exist
     (is (contains? #{:a :b} :a))))
-

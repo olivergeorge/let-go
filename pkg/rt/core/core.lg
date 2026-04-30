@@ -138,7 +138,10 @@
 
 (defn identity [x] x)
 
-(defn zero? [x] (= 0 x))
+(defn zero? [x]
+  (if (number? x)
+    (= 0 x)
+    (throw (str "zero? requires a number, got " x))))
 (defn pos? [x] (gt x 0))
 (defn neg? [x] (lt x 0))
 (defn even? [x]
@@ -1833,4 +1836,3 @@
 ;; with-out-str — capture printed output as a string
 (defmacro with-out-str [& body]
   `(with-out-str* (fn [] ~@body)))
-
