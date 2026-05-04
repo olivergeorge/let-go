@@ -6,6 +6,7 @@
 package vm
 
 import (
+	"math"
 	"reflect"
 	"strconv"
 	"unsafe"
@@ -50,5 +51,9 @@ func (l Float) Unbox() interface{} {
 }
 
 func (l Float) String() string {
-	return strconv.FormatFloat(float64(l), 'g', -1, 64)
+	f := float64(l)
+	if !math.IsInf(f, 0) && !math.IsNaN(f) && math.Trunc(f) == f {
+		return strconv.FormatFloat(f, 'f', 1, 64)
+	}
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }

@@ -55,3 +55,8 @@ func (u *UUID) String() string     { return "#uuid \"" + u.val + "\"" }
 
 // Hash implements Hashable.
 func (u *UUID) Hash() uint32 { return hashString(u.val) }
+
+func (u *UUID) Equals(other Value) bool {
+	o, ok := other.(*UUID)
+	return ok && u.val == o.val
+}

@@ -72,6 +72,9 @@ func (l *Func) Arity() int {
 func (l *Func) Invoke(pargs []Value) (result Value, err error) {
 	args := pargs
 	if l.isVariadric {
+		if len(args) < l.arity-1 {
+			return NIL, NewExecutionError(fmt.Sprintf("function %s expected at least %d args, got %d", l, l.arity-1, len(args)))
+		}
 		sargs := args[0 : l.arity-1]
 		rest := args[l.arity-1:]
 		restlist, boxErr := ListType.Box(rest)
@@ -79,6 +82,8 @@ func (l *Func) Invoke(pargs []Value) (result Value, err error) {
 			return NIL, boxErr
 		}
 		args = append(sargs, restlist)
+	} else if len(args) != l.arity {
+		return NIL, NewExecutionError(fmt.Sprintf("function %s expected %d args, got %d", l, l.arity, len(args)))
 	}
 	f := NewFrame(l.chunk, args)
 	result, err = f.Run()
@@ -143,6 +148,9 @@ func (l *Closure) Arity() int {
 func (l *Closure) Invoke(pargs []Value) (result Value, err error) {
 	args := pargs
 	if l.fn.isVariadric {
+		if len(args) < l.fn.arity-1 {
+			return NIL, NewExecutionError(fmt.Sprintf("function %s expected at least %d args, got %d", l, l.fn.arity-1, len(args)))
+		}
 		sargs := args[0 : l.fn.arity-1]
 		rest := args[l.fn.arity-1:]
 		restlist, boxErr := ListType.Box(rest)
@@ -150,6 +158,8 @@ func (l *Closure) Invoke(pargs []Value) (result Value, err error) {
 			return NIL, boxErr
 		}
 		args = append(sargs, restlist)
+	} else if len(args) != l.fn.arity {
+		return NIL, NewExecutionError(fmt.Sprintf("function %s expected %d args, got %d", l, l.fn.arity, len(args)))
 	}
 	f := NewFrame(l.fn.chunk, args)
 	f.closedOvers = l.closedOvers

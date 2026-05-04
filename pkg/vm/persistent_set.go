@@ -103,7 +103,7 @@ func (s *PersistentSet) Conj(value Value) Collection {
 	if newImpl == s.impl {
 		return s // already contains
 	}
-	return &PersistentSet{impl: newImpl}
+	return &PersistentSet{impl: newImpl, meta: s.meta}
 }
 
 // --- Set-specific ---
@@ -113,7 +113,7 @@ func (s *PersistentSet) Disj(value Value) *PersistentSet {
 	if newImpl == s.impl {
 		return s // wasn't present
 	}
-	return &PersistentSet{impl: newImpl}
+	return &PersistentSet{impl: newImpl, meta: s.meta}
 }
 
 func (s *PersistentSet) Contains(value Value) Boolean {
@@ -228,4 +228,3 @@ func (s *PersistentSet) Invoke(pargs []Value) (Value, error) {
 	}
 	return NIL, nil
 }
-

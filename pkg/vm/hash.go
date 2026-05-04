@@ -139,7 +139,8 @@ func valueEquiv(a, b Value) bool {
 // isComparable returns true if the Value can be safely compared with ==.
 func isComparable(v Value) bool {
 	switch v.(type) {
-	case Int, Float, String, Keyword, Symbol, Boolean, Char, *Nil, *Var, *Namespace:
+	case Int, Float, String, Keyword, Symbol, Boolean, Char, *Nil, *Var, *Namespace,
+		*NativeFn, *Func, *Closure, *MultiArityFn, *MultiFn:
 		return true
 	default:
 		// Type objects (singletons) are pointer-comparable

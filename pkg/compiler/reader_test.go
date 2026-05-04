@@ -68,3 +68,17 @@ func TestSimpleCall(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, out, o)
 }
+
+func TestReaderConditionalSplicing(t *testing.T) {
+	cases := map[string]vm.Value{
+		"(a #?@(:cljs [nil] :default []) b)": vm.EmptyList.Cons(vm.Symbol("b")).Cons(vm.Symbol("a")),
+		"(a #?@(:cljs [] :default [x y]) b)": vm.EmptyList.Cons(vm.Symbol("b")).Cons(vm.Symbol("y")).Cons(vm.Symbol("x")).Cons(vm.Symbol("a")),
+	}
+
+	for p, e := range cases {
+		r := NewLispReader(strings.NewReader(p), "<reader>")
+		o, err := r.Read()
+		assert.NoError(t, err)
+		assert.Equal(t, e, o)
+	}
+}

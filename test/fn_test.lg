@@ -6,7 +6,8 @@
   (testing "anonymous functions"
     (is (= 2 ((fn [x] (+ x 1)) 1)))
     (is (= 3 (#(+ %1 %2) 1 2)))
-    (is (= 6 (#(+ %1 %2 %3) 1 2 3))))
+    (is (= 6 (#(+ %1 %2 %3) 1 2 3)))
+    (is (= :caught (try ((fn [x] x) 1 2) (catch e :caught)))))
   
   (testing "multi-arity"
     (let [f (fn 
@@ -76,4 +77,3 @@
     (let [safe-inc (fnil inc 0)]
       (is (= 1 (safe-inc nil)))
       (is (= 6 (safe-inc 5))))))
-

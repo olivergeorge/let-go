@@ -11,7 +11,22 @@
     (is (= -3 (quot -10 3)))
     (is (= -3 (quot 10 -3)))
     (is (= 3 (quot -10 -3)))
-    (is (= 0 (quot 1 2)))))
+    (is (= 0 (quot 1 2))))
+  (testing "quot returns double for mixed decimal and double"
+    (is (double? (quot 10.0M 3.0)))
+    (is (= 3.0 (quot 10.0M 3.0)))
+    (is (double? (quot 10.0 3.0M)))
+    (is (= 3.0 (quot 10.0 3.0M))))
+  (testing "quot supports ratios"
+    (is (bigint? (quot 3 1/2)))
+    (is (= 6N (quot 3 1/2)))
+    (is (= 2N (quot 3 4/3)))
+    (is (= -2N (quot -3 4/3))))
+  (testing "quot follows JVM exceptional float cases"
+    (is (= :caught (try (quot ##Inf 1) (catch e :caught))))
+    (is (= 0.0 (quot 1 ##Inf)))
+    (is (= :caught (try (quot ##NaN 1) (catch e :caught))))
+    (is (= :caught (try (quot 1 ##NaN) (catch e :caught))))))
 
 (deftest rem-test
   (testing "rem sign follows dividend"
@@ -19,7 +34,23 @@
     (is (= -1 (rem -10 3)))
     (is (= 1 (rem 10 -3)))
     (is (= -1 (rem -10 -3)))
-    (is (= 0 (rem 10 5)))))
+    (is (= 0 (rem 10 5))))
+  (testing "rem returns double for mixed decimal and double"
+    (is (double? (rem 10.0M 3.0)))
+    (is (= 1.0 (rem 10.0M 3.0)))
+    (is (double? (rem 10.0 3.0M)))
+    (is (= 1.0 (rem 10.0 3.0M))))
+  (testing "rem supports ratios"
+    (is (bigint? (rem 3 1/2)))
+    (is (= 0N (rem 3 1/2)))
+    (is (ratio? (rem 3 4/3)))
+    (is (= 1/3 (rem 3 4/3)))
+    (is (= -1/3 (rem -3 4/3))))
+  (testing "rem follows JVM exceptional float cases"
+    (is (= :caught (try (rem ##Inf 1) (catch e :caught))))
+    (is (NaN? (rem 1 ##Inf)))
+    (is (= :caught (try (rem ##NaN 1) (catch e :caught))))
+    (is (= :caught (try (rem 1 ##NaN) (catch e :caught))))))
 
 (deftest mod-test
   (testing "mod sign follows divisor (floored)"
@@ -27,7 +58,23 @@
     (is (= 2 (mod -10 3)))
     (is (= -2 (mod 10 -3)))
     (is (= -1 (mod -10 -3)))
-    (is (= 0 (mod 10 5)))))
+    (is (= 0 (mod 10 5))))
+  (testing "mod returns double for mixed decimal and double"
+    (is (double? (mod 10.0M 3.0)))
+    (is (= 1.0 (mod 10.0M 3.0)))
+    (is (double? (mod 10.0 3.0M)))
+    (is (= 1.0 (mod 10.0 3.0M))))
+  (testing "mod supports ratios"
+    (is (bigint? (mod 3 1/2)))
+    (is (= 0N (mod 3 1/2)))
+    (is (ratio? (mod 3 4/3)))
+    (is (= 1/3 (mod 3 4/3)))
+    (is (= 1 (mod -3 4/3))))
+  (testing "mod follows JVM exceptional float cases"
+    (is (= :caught (try (mod ##Inf 1) (catch e :caught))))
+    (is (NaN? (mod 1 ##Inf)))
+    (is (= :caught (try (mod ##NaN 1) (catch e :caught))))
+    (is (= :caught (try (mod 1 ##NaN) (catch e :caught))))))
 
 ;; --- numeric predicates ---
 
@@ -61,12 +108,35 @@
     (is (not (integer? 3.14)))
     (is (not (integer? "42")))))
 
+(deftest even-odd-test
+  (testing "even? and odd? require integers"
+    (is (even? 12))
+    (is (odd? 17))
+    (is (= :caught (try (even? 1.5) (catch e :caught))))
+    (is (= :caught (try (odd? 1.5) (catch e :caught))))))
+
 (deftest rational-test
   (testing "rational?"
     (is (rational? 42))
     (is (rational? (bigint 999)))
+    (is (rational? 1.0M))
     (is (not (rational? 3.14)))
     (is (not (rational? "42")))))
+
+(deftest rationalize-test
+  (testing "rationalize uses decimal form for floats and decimals"
+    (is (= 11/10 (rationalize 1.1)))
+    (is (= 3333333333333333/10000000000000000 (rationalize (/ 1.0 3.0))))
+    (is (= 11/10 (rationalize 1.1M)))))
+
+(deftest min-max-nan-test
+  (testing "NaN dominates max and min"
+    (is (NaN? (max 1 ##NaN)))
+    (is (NaN? (max 1 2 3 4 ##NaN)))
+    (is (NaN? (max ##-Inf ##NaN ##Inf)))
+    (is (NaN? (min 1 ##NaN)))
+    (is (NaN? (min 1 2 3 4 ##NaN)))
+    (is (NaN? (min ##-Inf ##NaN ##Inf)))))
 
 (deftest decimal-test
   (testing "decimal? always false (no BigDecimal)"
@@ -88,6 +158,48 @@
     (is (not (boolean? 1)))
     (is (not (boolean? "true")))))
 
+(deftest ifn-test
+  (testing "ifn? includes promise"
+    (is (ifn? (promise)))))
+
+(deftest nth-bounds-test
+  (testing "nth throws on vector indexes without default"
+    (is (= :caught (try (nth [0 1 2] 10) (catch e :caught))))
+    (is (= :caught (try (nth [0 1 2] -1) (catch e :caught)))))
+  (testing "nth preserves default behavior"
+    (is (= :default (nth [0 1 2] 10 :default)))
+    (is (= :default (nth [0 1 2] -1 :default))))
+  (testing "destructuring still uses nil defaults"
+    (let [[a b] []]
+      (is (nil? a))
+      (is (nil? b)))))
+
+(deftest disj-meta-test
+  (testing "disj preserves metadata"
+    (is (= {:tag :m} (meta (disj (with-meta #{1 2 3} {:tag :m}) 1))))))
+
+(deftest identical-empty-map-test
+  (testing "empty maps from dissoc remain distinct objects"
+    (let [x (hash-map)
+          y (dissoc (hash-map :a :b) :a)]
+      (is (= x y))
+      (is (not (identical? x y))))))
+
+(deftest string-list-eq-test
+  (testing "strings are not seq-equal to character lists"
+    (is (not (= "hello" '(\h \e \l \l \o))))))
+
+(deftest sorted-map-by-boolean-comparator-test
+  (testing "sorted-map-by accepts boolean comparators"
+    (is (= (sorted-map-by < 13 :a 14 :b 15 :c)
+           (sorted-map-by > 13 :a 14 :b 15 :c)))
+    (is (= [15 14 13] (keys (sorted-map-by > 13 :a 14 :b 15 :c))))))
+
+(deftest complement-not-eq-test
+  (testing "complement preserves variadic function arity"
+    (is ((complement not=) 1 1))
+    (is (not ((complement not=) 1 2)))))
+
 (deftest char-test
   (testing "char?"
     (is (char? \a))
@@ -101,6 +213,10 @@
     (is (not (var? 42)))
     (is (not (var? "x")))))
 
+(deftest symbol-var-test
+  (testing "symbol accepts vars"
+    (is (= 'clojure.core/+ (symbol (var +))))))
+
 ;; --- type coercion aliases ---
 
 (deftest long-test
@@ -113,7 +229,8 @@
     (is (= 0 (byte 0)))
     (is (= 127 (byte 127)))
     (is (= -128 (byte -128)))
-    (is (= 65 (byte 65.9)))))
+    (is (= 65 (byte 65.9)))
+    (is (= :caught (try (byte 127.000001) (catch e :caught)))))
 
 (deftest unchecked-byte-test
   (testing "unchecked-byte wraps on overflow"
@@ -126,7 +243,8 @@
   (testing "short coerces with range check"
     (is (= 0 (short 0)))
     (is (= 32767 (short 32767)))
-    (is (= -32768 (short -32768)))))
+    (is (= -32768 (short -32768)))
+    (is (= :caught (try (short 32767.000001) (catch e :caught)))))
 
 (deftest unchecked-short-test
   (testing "unchecked-short wraps on overflow"
@@ -218,6 +336,13 @@
     (is (= true (parse-boolean "true")))
     (is (= false (parse-boolean "false")))
     (is (nil? (parse-boolean "yes")))))
+
+(deftest parse-uuid-test
+  (testing "parse-uuid normalizes case for equality"
+    (is (= (parse-uuid "550e8400-e29b-41d4-a716-446655440000")
+           (parse-uuid "550E8400-E29B-41D4-A716-446655440000"))))
+  (testing "#uuid reader literal produces a UUID"
+    (is (uuid? #uuid "550e8400-e29b-41d4-a716-446655440000"))))
 
 ;; --- run! ---
 

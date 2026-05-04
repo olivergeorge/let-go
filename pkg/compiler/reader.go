@@ -160,8 +160,12 @@ func appendNonVoid(r *LispReader, vs []vm.Value, v vm.Value) []vm.Value {
 	}
 	if r.splicing {
 		r.splicing = false
-		seq, ok := v.(vm.Seq)
-		if !ok {
+		var seq vm.Seq
+		if s, ok := v.(vm.Sequable); ok {
+			seq = s.Seq()
+		} else if s, ok := v.(vm.Seq); ok {
+			seq = s
+		} else {
 			return vs
 		}
 		for seq != nil && seq != vm.EmptyList {
@@ -1285,9 +1289,6 @@ func isLetter(ch rune) bool {
 
 func readTaggedLiteral(r *LispReader, firstCh rune) (vm.Value, error) {
 	// Read the tag name
-	if err := r.unread(); err != nil {
-		return vm.NIL, NewReaderError(r, "reading tagged literal")
-	}
 	tag, err := readToken(r, firstCh)
 	if err != nil {
 		return vm.NIL, NewReaderError(r, "reading tagged literal tag")

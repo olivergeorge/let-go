@@ -669,10 +669,7 @@ func (m *PersistentMap) Dissoc(key Value) Associative {
 		return m
 	}
 	if newRoot == nil {
-		if m.meta == nil {
-			return EmptyPersistentMap
-		}
-		return EmptyPersistentMap.WithMeta(m.meta).(*PersistentMap)
+		return &PersistentMap{count: 0, root: nil, meta: m.meta}
 	}
 	return &PersistentMap{count: m.count - 1, root: newRoot, meta: m.meta}
 }

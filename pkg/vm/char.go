@@ -46,5 +46,15 @@ func (l Char) Unbox() interface{} {
 }
 
 func (l Char) String() string {
+	switch rune(l) {
+	case ' ':
+		return "\\space"
+	case '\n':
+		return "\\newline"
+	case '\t':
+		return "\\tab"
+	case '\r':
+		return "\\return"
+	}
 	return "\\" + string(l)
 }

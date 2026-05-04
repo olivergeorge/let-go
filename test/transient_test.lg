@@ -39,6 +39,12 @@
       (catch e
         (is (= "transient used after persistent! call" (ex-message e)))))))
 
+(deftest transient-persistent-twice
+  (testing "persistent! throws after a transient is frozen"
+    (let [t (transient {})]
+      (persistent! t)
+      (is (= :caught (try (persistent! t) (catch e :caught)))))))
+
 (deftest into-uses-transients
   (testing "into map from seq of pairs"
     (let [m (into {} (map (fn [x] [x (* x x)]) (range 5)))]

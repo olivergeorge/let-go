@@ -61,7 +61,10 @@ func (l Keyword) Invoke(pargs []Value) (Value, error) {
 	}
 	as, ok := pargs[0].(Lookup)
 	if !ok {
-		return NIL, fmt.Errorf("Keyword expected Lookup")
+		if vl == 2 {
+			return pargs[1], nil
+		}
+		return NIL, nil
 	}
 	if vl == 1 {
 		return as.ValueAt(l), nil

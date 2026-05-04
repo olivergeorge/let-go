@@ -43,66 +43,37 @@ var knownFailing = map[string]bool{
 	"star_squote":     true, // *' BigInt promotion at Long boundary
 	"underive":        true, // hierarchy stub returns empty
 	"with_precision":  true, // with-precision is a no-op; results don't round
-	"byte":            true, // byte range overflow
 	"case":            true, // case macro complex matching
 	"compare":         true, // compare cross-type issues
 	"conj":            true, // conj arity/nil edge cases
 	"conj_bang":       true, // transient conj edge cases
-	"counted_qmark":   true, // counted? edge cases (hash-set, nil, strings)
 	"dec":             true, // dec overflow/type coercion
-	"disj":            true, // disj edge cases
 	"double_qmark":    true, // no float32/float64 distinction
 	"empty_qmark":     true, // empty? on list containing nil
-	"eq":              true, // identical?-based eq function
-	"even_qmark":      true, // even? on float
 	"float":           true, // BigDecimal edge cases
-	"identical_qmark": true, // identical? on boxed values
-	"ifn_qmark":       true, // ifn? edge cases
 	"inc":             true, // overflow untested assertion
 	"int":             true, // int overflow bounds
 	"intern":          true, // intern var binding
 	"juxt":            true, // juxt composition edge cases
 	"list_qmark":      true, // seq types report as list
 	"mapcat":          true, // hash-map iteration order (single edge case)
-	"max":             true, // max with NaN
 	"merge":           true, // merge with nil/meta
-	"min":             true, // min with NaN
 	"min_key":         true, // min-key edge cases
 	"minus":           true, // overflow not detected
-	"mod":             true, // mod NaN/ratio edge cases
 	"nnext":           true, // map ordering
-	"not_eq":          true, // identical?-based eq within not_eq
 	"not_empty":       true, // not-empty on list containing nil
-	"nth":             true, // nth out-of-bounds doesn't throw
 	"nthnext":         true, // nthnext on various types
 	"num":             true, // num edge cases
-	"odd_qmark":       true, // odd? on float
-	"parse_uuid":      true, // UUID parsing tolerance
 	"partial":         true, // lazy evaluation edge case
 	"peek":            true, // peek on cons
-	"persistent_bang": true, // persistent! edge cases
 	"plus":            true, // overflow not detected
-	"pr_str":          true, // pr-str formatting
-	"print_str":       true, // int-as-float formatting
-	"println_str":     true, // int-as-float formatting
-	"prn_str":         true, // int-as-float formatting
-	"quot":            true, // quot NaN/ratio edge cases
-	"rand_nth":        true, // rand-nth on various types
-	"random_sample":   true, // random-sample edge cases
-	"random_uuid":     true, // UUID type changes
-	"rational_qmark":  true, // rational? edge cases
-	"rationalize":     true, // rationalize precision
 	"reduce":          true, // reduce interop edge cases
-	"rem":             true, // rem NaN/ratio edge cases
 	"short":           true, // short coercion
 	"slash":           true, // division edge cases
 	"sort":            true, // sort edge cases
 	"sort_by":         true, // sort-by edge cases
 	"star":            true, // overflow not detected
 	"str":             true, // str reader conditional
-	"symbol":          true, // symbol coercion
-	"update":          true, // update edge cases
-	"uuid_qmark":      true, // UUID type predicate
 	"when_first":      true, // when-first edge cases
 	"when_let":        true, // when-let macroexpand test
 }

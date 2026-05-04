@@ -89,11 +89,18 @@
       (is (= (count v) (count s)))
       (is (= (set v) (set s))))))
 
+(deftest rand-nth-test
+  (testing "rand-nth nil and invalid input"
+    (is (nil? (rand-nth nil)))
+    (is (= :caught (try (rand-nth 1) (catch e :caught))))))
+
 (deftest pr-str-test
   (testing "pr-str returns readable representation"
     (is (string? (pr-str 42)))
     (is (string? (pr-str "hello")))
-    (is (string? (pr-str [1 2 3])))))
+    (is (string? (pr-str [1 2 3])))
+    (is (= "17.0" (pr-str 17.0)))
+    (is (= "\\space" (pr-str \space)))))
 
 (deftest nth-test
   (testing "nth on vector"

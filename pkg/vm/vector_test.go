@@ -310,14 +310,13 @@ func TestPersistentVectorSeq(t *testing.T) {
 		}
 	})
 
-	t.Run("inTail flag behavior", func(t *testing.T) {
+	t.Run("seq traverses tree and tail values", func(t *testing.T) {
 		// Create a vector with only tail elements (< 32)
 		smallVec := NewPersistentVector([]Value{Int(1), Int(2), Int(3)})
 		smallSeq := smallVec.(Sequable).Seq().(*PersistentVectorSeq)
 
-		// Verify it's using the tail
-		if !smallSeq.inTail {
-			t.Errorf("Small vector seq should have inTail=true but got false")
+		if got := smallSeq.First(); got != Int(1) {
+			t.Errorf("small vector first: expected 1, got %v", got)
 		}
 
 		// Create vector large enough to have tree elements
@@ -328,9 +327,8 @@ func TestPersistentVectorSeq(t *testing.T) {
 		largeVec := NewPersistentVector(values)
 		largeSeq := largeVec.(Sequable).Seq().(*PersistentVectorSeq)
 
-		// Verify it's using the tree first
-		if largeSeq.inTail {
-			t.Errorf("Large vector seq should start with inTail=false but got true")
+		if got := largeSeq.First(); got != Int(0) {
+			t.Errorf("large vector first: expected 0, got %v", got)
 		}
 
 		// Navigate to tail section (after index 32)
@@ -343,8 +341,8 @@ func TestPersistentVectorSeq(t *testing.T) {
 		tailSeq, ok := seq.(*PersistentVectorSeq)
 		if !ok {
 			t.Errorf("Expected *PersistentVectorSeq, got %T", seq)
-		} else if !tailSeq.inTail {
-			t.Errorf("After navigating to index 33, expected inTail=true but got false")
+		} else if got := tailSeq.First(); got != Int(33) {
+			t.Errorf("After navigating to index 33, expected value 33, got %v", got)
 		}
 	})
 }
@@ -385,6 +383,19 @@ func TestPersistentVectorLargeAssoc(t *testing.T) {
 		// Verify original is unchanged (persistence)
 		if pv.ValueAt(Int(0)) != Int(0) {
 			t.Errorf("size=%d: original vector was mutated", size)
+		}
+	}
+}
+
+func TestPersistentVectorLargeConjNoMissingValues(t *testing.T) {
+	var c Collection = ArrayVector{}
+	for i := 0; i < 10000; i++ {
+		c = c.Conj(Int(i))
+	}
+	v := c.(PersistentVector)
+	for i := 0; i < v.RawCount(); i++ {
+		if got := v.ValueAt(Int(i)); got != Int(i) {
+			t.Fatalf("index %d: expected %d, got %v", i, i, got)
 		}
 	}
 }

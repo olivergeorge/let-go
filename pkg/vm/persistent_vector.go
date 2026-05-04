@@ -165,10 +165,7 @@ func (s *PersistentVectorSeq) First() Value {
 	if s.i >= s.vec.count {
 		return NIL
 	}
-	if s.inTail {
-		return s.vec.tail[s.nodeIdx]
-	}
-	return s.node.array[s.nodeIdx].(Value)
+	return s.vec.ValueAt(Int(s.i))
 }
 
 // More implements Seq
@@ -188,47 +185,9 @@ func (s *PersistentVectorSeq) Next() Seq {
 }
 
 func (s *PersistentVectorSeq) nextSeq() *PersistentVectorSeq {
-	nextI := s.i + 1
-
-	// Check if we need to move to tail
-	if nextI >= s.vec.tailOff && !s.inTail {
-		return &PersistentVectorSeq{
-			vec:     s.vec,
-			i:       nextI,
-			nodeIdx: nextI - s.vec.tailOff,
-			inTail:  true,
-		}
-	}
-
-	// If we're already in tail, just increment index
-	if s.inTail {
-		return &PersistentVectorSeq{
-			vec:     s.vec,
-			i:       nextI,
-			nodeIdx: s.nodeIdx + 1,
-			inTail:  true,
-		}
-	}
-
-	// If we're at the end of current node, find next node
-	if s.nodeIdx+1 >= len(s.node.array) {
-		newNode := s.findNextNode(nextI)
-		return &PersistentVectorSeq{
-			vec:     s.vec,
-			i:       nextI,
-			node:    newNode,
-			nodeIdx: 0,
-			inTail:  false,
-		}
-	}
-
-	// Just move to next element in current node
 	return &PersistentVectorSeq{
-		vec:     s.vec,
-		i:       nextI,
-		node:    s.node,
-		nodeIdx: s.nodeIdx + 1,
-		inTail:  false,
+		vec: s.vec,
+		i:   s.i + 1,
 	}
 }
 
@@ -360,7 +319,7 @@ func (v PersistentVector) Conj(val Value) Collection {
 
 	// Check if we need to grow the tree height.
 	// Tree overflow: tailOff indexes need more bits than the current shift allows.
-	if (v.tailOff >> shift) > (1 << v.shift) {
+	if (v.tailOff >> shift) >= (1 << v.shift) {
 		newRoot := newNode()
 		newRoot.array = append(newRoot.array, v.root)
 		newRoot.array = append(newRoot.array, newPath(v.shift, v.tail))
@@ -390,7 +349,7 @@ func (v PersistentVector) Conj(val Value) Collection {
 
 // pushTail inserts a tail chunk into the trie at the position indicated by tailOff.
 func pushTail(level uint, parent *vnode, tailOff int, tail []Value) *vnode {
-	subidx := ((tailOff - 1) >> level) & nodeMask
+	subidx := (tailOff >> level) & nodeMask
 
 	// Copy parent
 	ret := &vnode{array: make([]interface{}, len(parent.array))}
@@ -552,7 +511,15 @@ func (v PersistentVector) Invoke(args []Value) (Value, error) {
 	if len(args) != 1 {
 		return NIL, fmt.Errorf("wrong number of arguments: %d, expected: 1", len(args))
 	}
-	return v.ValueAt(args[0]), nil
+	idx, ok := args[0].(Int)
+	if !ok {
+		return NIL, fmt.Errorf("vector key must be Int")
+	}
+	i := int(idx)
+	if i < 0 || i >= v.count {
+		return NIL, fmt.Errorf("index out of bounds: %d", i)
+	}
+	return v.ValueAt(idx), nil
 }
 
 func NewPersistentVector(values []Value) Value {

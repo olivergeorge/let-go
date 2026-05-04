@@ -212,7 +212,11 @@ func NumQuot(a, b Value) (Value, error) {
 			if float64(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			return Float(float64(int(float64(av) / float64(bv)))), nil
+			q, err := numQuotFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
+			}
+			return Float(q), nil
 		case *BigInt:
 			if bv.val.Sign() == 0 {
 				return NIL, fmt.Errorf("divide by zero")
@@ -226,12 +230,20 @@ func NumQuot(a, b Value) (Value, error) {
 			if int(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			return Float(float64(int(float64(av) / float64(bv)))), nil
+			q, err := numQuotFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
+			}
+			return Float(q), nil
 		case Float:
 			if float64(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			return Float(float64(int(float64(av) / float64(bv)))), nil
+			q, err := numQuotFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
+			}
+			return Float(q), nil
 		}
 	case *BigInt:
 		switch bv := b.(type) {
@@ -249,20 +261,104 @@ func NumQuot(a, b Value) (Value, error) {
 			return NewBigInt(r), nil
 		}
 	}
+	if IsRatio(a) || IsRatio(b) {
+		if _, ok := a.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			q, err := numQuotFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(q), nil
+		}
+		if _, ok := b.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			q, err := numQuotFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(q), nil
+		}
+		ar, aok := ToRat(a)
+		br, bok := ToRat(b)
+		if aok && bok {
+			if br.Sign() == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			return NewBigInt(numTruncatedRatQuot(ar, br)), nil
+		}
+	}
+	if _, ok := a.(*BigDecimal); ok {
+		if _, ok := b.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			q, err := numQuotFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(q), nil
+		}
+	}
+	if _, ok := b.(*BigDecimal); ok {
+		if _, ok := a.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			q, err := numQuotFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(q), nil
+		}
+	}
 	// BigDecimal fallback: convert to float, truncate, return BigDecimal
 	if _, ok := a.(*BigDecimal); ok {
 		af, _ := ToFloat(a)
 		bf, _ := ToFloat(b)
-		if bf == 0 { return NIL, fmt.Errorf("divide by zero") }
-		return NewBigDecimalFromFloat64(float64(int64(af / bf))), nil
+		if bf == 0 {
+			return NIL, fmt.Errorf("divide by zero")
+		}
+		q, err := numQuotFloat(af, bf)
+		if err != nil {
+			return NIL, err
+		}
+		return NewBigDecimalFromFloat64(q), nil
 	}
 	if _, ok := b.(*BigDecimal); ok {
 		af, _ := ToFloat(a)
 		bf, _ := ToFloat(b)
-		if bf == 0 { return NIL, fmt.Errorf("divide by zero") }
-		return NewBigDecimalFromFloat64(float64(int64(af / bf))), nil
+		if bf == 0 {
+			return NIL, fmt.Errorf("divide by zero")
+		}
+		q, err := numQuotFloat(af, bf)
+		if err != nil {
+			return NIL, err
+		}
+		return NewBigDecimalFromFloat64(q), nil
 	}
 	return NIL, fmt.Errorf("cannot quot %s and %s", a.Type().Name(), b.Type().Name())
+}
+
+func numQuotFloat(a, b float64) (float64, error) {
+	if b == 0 || math.IsInf(a, 0) || math.IsNaN(a) || math.IsNaN(b) {
+		return 0, fmt.Errorf("divide by zero")
+	}
+	if math.IsInf(b, 0) {
+		return 0, nil
+	}
+	return math.Trunc(a / b), nil
 }
 
 // NumRem computes the remainder of truncated division (like Java's %).
@@ -280,7 +376,11 @@ func NumRem(a, b Value) (Value, error) {
 			if float64(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			return Float(math.Remainder(float64(av), float64(bv))), nil
+			r, err := numRemFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
 		case *BigInt:
 			if bv.val.Sign() == 0 {
 				return NIL, fmt.Errorf("divide by zero")
@@ -294,12 +394,20 @@ func NumRem(a, b Value) (Value, error) {
 			if int(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			return Float(math.Remainder(float64(av), float64(bv))), nil
+			r, err := numRemFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
 		case Float:
 			if float64(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			return Float(math.Remainder(float64(av), float64(bv))), nil
+			r, err := numRemFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
 		}
 	case *BigInt:
 		switch bv := b.(type) {
@@ -317,20 +425,114 @@ func NumRem(a, b Value) (Value, error) {
 			return NewBigInt(r), nil
 		}
 	}
+	if IsRatio(a) || IsRatio(b) {
+		if _, ok := a.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numRemFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+		if _, ok := b.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numRemFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+		ar, aok := ToRat(a)
+		br, bok := ToRat(b)
+		if aok && bok {
+			if br.Sign() == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			return numRatRemainderValue(numRatRem(ar, br)), nil
+		}
+	}
+	// Clojure returns a double for mixed BigDecimal/double remainders.
+	if _, ok := a.(*BigDecimal); ok {
+		if _, ok := b.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numRemFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+	}
+	if _, ok := b.(*BigDecimal); ok {
+		if _, ok := a.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numRemFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+	}
 	// BigDecimal fallback
 	if _, ok := a.(*BigDecimal); ok {
 		af, _ := ToFloat(a)
 		bf, _ := ToFloat(b)
-		if bf == 0 { return NIL, fmt.Errorf("divide by zero") }
-		return NewBigDecimalFromFloat64(math.Remainder(af, bf)), nil
+		if bf == 0 {
+			return NIL, fmt.Errorf("divide by zero")
+		}
+		return NewBigDecimalFromFloat64(math.Mod(af, bf)), nil
 	}
 	if _, ok := b.(*BigDecimal); ok {
 		af, _ := ToFloat(a)
 		bf, _ := ToFloat(b)
-		if bf == 0 { return NIL, fmt.Errorf("divide by zero") }
-		return NewBigDecimalFromFloat64(math.Remainder(af, bf)), nil
+		if bf == 0 {
+			return NIL, fmt.Errorf("divide by zero")
+		}
+		return NewBigDecimalFromFloat64(math.Mod(af, bf)), nil
 	}
 	return NIL, fmt.Errorf("cannot rem %s and %s", a.Type().Name(), b.Type().Name())
+}
+
+func numRemFloat(a, b float64) (float64, error) {
+	if b == 0 || math.IsInf(a, 0) || math.IsNaN(a) || math.IsNaN(b) {
+		return 0, fmt.Errorf("divide by zero")
+	}
+	if math.IsInf(b, 0) {
+		return math.NaN(), nil
+	}
+	return math.Mod(a, b), nil
+}
+
+func numTruncatedRatQuot(a, b *big.Rat) *big.Int {
+	quot := new(big.Rat).Quo(a, b)
+	return new(big.Int).Quo(quot.Num(), quot.Denom())
+}
+
+func numRatRem(a, b *big.Rat) *big.Rat {
+	qRat := new(big.Rat).SetInt(numTruncatedRatQuot(a, b))
+	return new(big.Rat).Sub(a, new(big.Rat).Mul(qRat, b))
+}
+
+func numRatRemainderValue(r *big.Rat) Value {
+	if r.IsInt() {
+		return NewBigInt(new(big.Int).Set(r.Num()))
+	}
+	return NewRatio(r)
 }
 
 // NumMod computes the floored modulus (like Clojure's mod).
@@ -352,9 +554,9 @@ func NumMod(a, b Value) (Value, error) {
 			if float64(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			r := math.Mod(float64(av), float64(bv))
-			if r != 0 && (r > 0) != (float64(bv) > 0) {
-				r += float64(bv)
+			r, err := numModFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
 			}
 			return Float(r), nil
 		case *BigInt:
@@ -374,18 +576,18 @@ func NumMod(a, b Value) (Value, error) {
 			if int(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			r := math.Mod(float64(av), float64(bv))
-			if r != 0 && (r > 0) != (float64(bv) > 0) {
-				r += float64(bv)
+			r, err := numModFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
 			}
 			return Float(r), nil
 		case Float:
 			if float64(bv) == 0 {
 				return NIL, fmt.Errorf("divide by zero")
 			}
-			r := math.Mod(float64(av), float64(bv))
-			if r != 0 && (r > 0) != (float64(bv) > 0) {
-				r += float64(bv)
+			r, err := numModFloat(float64(av), float64(bv))
+			if err != nil {
+				return NIL, err
 			}
 			return Float(r), nil
 		}
@@ -412,24 +614,112 @@ func NumMod(a, b Value) (Value, error) {
 			return NewBigInt(r), nil
 		}
 	}
+	if IsRatio(a) || IsRatio(b) {
+		if _, ok := a.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numModFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+		if _, ok := b.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numModFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+		ar, aok := ToRat(a)
+		br, bok := ToRat(b)
+		if aok && bok {
+			if br.Sign() == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r := numRatRem(ar, br)
+			if r.Sign() != 0 && (r.Sign() > 0) != (br.Sign() > 0) {
+				r.Add(r, br)
+			}
+			return numRatRemainderValue(r), nil
+		}
+	}
+	if _, ok := a.(*BigDecimal); ok {
+		if _, ok := b.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numModFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+	}
+	if _, ok := b.(*BigDecimal); ok {
+		if _, ok := a.(Float); ok {
+			af, _ := ToFloat(a)
+			bf, _ := ToFloat(b)
+			if bf == 0 {
+				return NIL, fmt.Errorf("divide by zero")
+			}
+			r, err := numModFloat(af, bf)
+			if err != nil {
+				return NIL, err
+			}
+			return Float(r), nil
+		}
+	}
 	// BigDecimal fallback
 	if _, ok := a.(*BigDecimal); ok {
 		af, _ := ToFloat(a)
 		bf, _ := ToFloat(b)
-		if bf == 0 { return NIL, fmt.Errorf("divide by zero") }
-		r := math.Mod(af, bf)
-		if r != 0 && (r > 0) != (bf > 0) { r += bf }
+		if bf == 0 {
+			return NIL, fmt.Errorf("divide by zero")
+		}
+		r, err := numModFloat(af, bf)
+		if err != nil {
+			return NIL, err
+		}
 		return NewBigDecimalFromFloat64(r), nil
 	}
 	if _, ok := b.(*BigDecimal); ok {
 		af, _ := ToFloat(a)
 		bf, _ := ToFloat(b)
-		if bf == 0 { return NIL, fmt.Errorf("divide by zero") }
-		r := math.Mod(af, bf)
-		if r != 0 && (r > 0) != (bf > 0) { r += bf }
+		if bf == 0 {
+			return NIL, fmt.Errorf("divide by zero")
+		}
+		r, err := numModFloat(af, bf)
+		if err != nil {
+			return NIL, err
+		}
 		return NewBigDecimalFromFloat64(r), nil
 	}
 	return NIL, fmt.Errorf("cannot mod %s and %s", a.Type().Name(), b.Type().Name())
+}
+
+func numModFloat(a, b float64) (float64, error) {
+	r, err := numRemFloat(a, b)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(r) {
+		return r, nil
+	}
+	if r != 0 && (r > 0) != (b > 0) {
+		r += b
+	}
+	return r, nil
 }
 
 // NumNeg negates a numeric value.
@@ -476,7 +766,6 @@ func NumAbs(a Value) (Value, error) {
 
 // --- Comparison helpers ---
 
-
 // NumGt returns true if a > b.
 func NumGt(a, b Value) (bool, error) {
 	switch av := a.(type) {
@@ -510,7 +799,9 @@ func NumGt(a, b Value) (bool, error) {
 			return av.val.Cmp(bv.val) > 0, nil
 		}
 	}
-	if c, err := numCmpFallback(a, b); err == nil { return c > 0, nil }
+	if c, err := numCmpFallback(a, b); err == nil {
+		return c > 0, nil
+	}
 	return false, fmt.Errorf("cannot compare %s and %s", a.Type().Name(), b.Type().Name())
 }
 
@@ -547,7 +838,9 @@ func NumLt(a, b Value) (bool, error) {
 			return av.val.Cmp(bv.val) < 0, nil
 		}
 	}
-	if c, err := numCmpFallback(a, b); err == nil { return c < 0, nil }
+	if c, err := numCmpFallback(a, b); err == nil {
+		return c < 0, nil
+	}
 	return false, fmt.Errorf("cannot compare %s and %s", a.Type().Name(), b.Type().Name())
 }
 
@@ -583,7 +876,9 @@ func NumGe(a, b Value) (bool, error) {
 			return av.val.Cmp(bv.val) >= 0, nil
 		}
 	}
-	if c, err := numCmpFallback(a, b); err == nil { return c >= 0, nil }
+	if c, err := numCmpFallback(a, b); err == nil {
+		return c >= 0, nil
+	}
 	return false, fmt.Errorf("cannot compare %s and %s", a.Type().Name(), b.Type().Name())
 }
 
@@ -619,7 +914,9 @@ func NumLe(a, b Value) (bool, error) {
 			return av.val.Cmp(bv.val) <= 0, nil
 		}
 	}
-	if c, err := numCmpFallback(a, b); err == nil { return c <= 0, nil }
+	if c, err := numCmpFallback(a, b); err == nil {
+		return c <= 0, nil
+	}
 	return false, fmt.Errorf("cannot compare %s and %s", a.Type().Name(), b.Type().Name())
 }
 
@@ -650,7 +947,9 @@ func NumEq(a, b Value) bool {
 			return av.val.Cmp(bv.val) == 0
 		}
 	}
-	if c, err := numCmpFallback(a, b); err == nil { return c == 0 }
+	if c, err := numCmpFallback(a, b); err == nil {
+		return c == 0
+	}
 	return false
 }
 
@@ -717,14 +1016,14 @@ type bdOp func(a, b *big.Float) *big.Float
 type floatOp func(a, b float64) float64
 
 var (
-	ratAdd  ratOp  = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Add(a, b) }
-	ratSub  ratOp  = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Sub(a, b) }
-	ratMul  ratOp  = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Mul(a, b) }
-	ratDiv  ratOp  = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Quo(a, b) }
-	bdAdd   bdOp   = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Add(a, b) }
-	bdSub   bdOp   = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Sub(a, b) }
-	bdMul   bdOp   = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Mul(a, b) }
-	bdDiv   bdOp   = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Quo(a, b) }
+	ratAdd   ratOp   = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Add(a, b) }
+	ratSub   ratOp   = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Sub(a, b) }
+	ratMul   ratOp   = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Mul(a, b) }
+	ratDiv   ratOp   = func(a, b *big.Rat) *big.Rat { return new(big.Rat).Quo(a, b) }
+	bdAdd    bdOp    = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Add(a, b) }
+	bdSub    bdOp    = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Sub(a, b) }
+	bdMul    bdOp    = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Mul(a, b) }
+	bdDiv    bdOp    = func(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(bigDecimalPrec).Quo(a, b) }
 	floatAdd floatOp = func(a, b float64) float64 { return a + b }
 	floatSub floatOp = func(a, b float64) float64 { return a - b }
 	floatMul floatOp = func(a, b float64) float64 { return a * b }
@@ -810,8 +1109,12 @@ func numCmpFallback(a, b Value) (int, error) {
 		if _, ok := b.(Float); ok {
 			af := ar.ToFloat64()
 			bf := float64(b.(Float))
-			if af < bf { return -1, nil }
-			if af > bf { return 1, nil }
+			if af < bf {
+				return -1, nil
+			}
+			if af > bf {
+				return 1, nil
+			}
 			return 0, nil
 		}
 		if br, ok := ToRat(b); ok {
@@ -822,8 +1125,12 @@ func numCmpFallback(a, b Value) (int, error) {
 		if _, ok := a.(Float); ok {
 			af := float64(a.(Float))
 			bf := br.ToFloat64()
-			if af < bf { return -1, nil }
-			if af > bf { return 1, nil }
+			if af < bf {
+				return -1, nil
+			}
+			if af > bf {
+				return 1, nil
+			}
 			return 0, nil
 		}
 		if ar, ok := ToRat(a); ok {

@@ -121,7 +121,7 @@ func (s *SortedSet) Conj(value Value) Collection {
 		// Check if it was actually the same — might have been a replacement
 		return s
 	}
-	return &SortedSet{impl: newImpl}
+	return &SortedSet{impl: newImpl, meta: s.meta}
 }
 
 // --- Set-specific ---
@@ -131,7 +131,7 @@ func (s *SortedSet) Disj(value Value) *SortedSet {
 	if newImpl.count == s.impl.count {
 		return s
 	}
-	return &SortedSet{impl: newImpl}
+	return &SortedSet{impl: newImpl, meta: s.meta}
 }
 
 func (s *SortedSet) Contains(value Value) Boolean {

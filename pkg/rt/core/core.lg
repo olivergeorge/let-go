@@ -145,17 +145,11 @@
 (defn pos? [x] (gt x 0))
 (defn neg? [x] (lt x 0))
 (defn even? [x]
-  (when (and (float? x) (or (= x ##Inf) (= x ##-Inf) (not (= x x))))
+  (when-not (integer? x)
     (throw (str "even? requires an integer, got " x)))
   (= 0 (mod x 2)))
 (defn odd? [x]
-  (when (and (float? x) (or (= x ##Inf) (= x ##-Inf) (not (= x x))))
-    (throw (str "odd? requires an integer, got " x)))
   (not (even? x)))
-
-(defmacro not= [& xs] (list 'not (cons '= xs)))
-
-(defn complement [f] (fn [x] (not (f x))))
 
 (defn nil? [x] (= nil x))
 (defn some? [x] (not= nil x))
@@ -188,22 +182,22 @@
 (defn nat-int? [x] (and (int? x) (not (neg? x))))
 (defn integer? [x] (or (int? x) (bigint? x)))
 ;; decimal? and ratio? are native builtins
-(defn rational? [x] (or (int? x) (bigint? x) (ratio? x)))
+(defn rational? [x] (or (int? x) (bigint? x) (ratio? x) (decimal? x)))
 
 ;; type coercion aliases
 (def long int)
 (defn byte [x]
-  (let [n (int x)]
-    (if (and (>= n -128) (<= n 127)) n
-      (throw (ex-info (str "Value out of range for byte: " n) {})))))
+  (if (and (>= x -128) (<= x 127))
+    (int x)
+    (throw (ex-info (str "Value out of range for byte: " x) {}))))
 (defn unchecked-byte [x]
   (let [n (int x)
         b (mod (+ (mod n 256) 256) 256)]
     (if (> b 127) (- b 256) b)))
 (defn short [x]
-  (let [n (int x)]
-    (if (and (>= n -32768) (<= n 32767)) n
-      (throw (ex-info (str "Value out of range for short: " n) {})))))
+  (if (and (>= x -32768) (<= x 32767))
+    (int x)
+    (throw (ex-info (str "Value out of range for short: " x) {}))))
 (defn unchecked-short [x]
   (let [n (int x)
         s (mod (+ (mod n 65536) 65536) 65536)]
@@ -477,7 +471,7 @@
         (cond
           (= x '&) (recur (drop 2 e) i (conj o (second e) (list 'drop i n)))
           (= x :as) (recur (drop 2 e) i (conj o (second e) n))
-          :else (recur (next e) (inc i) (conj o x (list 'nth n i))))))))
+          :else (recur (next e) (inc i) (conj o x (list 'nth n i nil))))))))
 
 (defn ^:private destructure-map [n m]
   (let [defaults (:or m)
@@ -997,9 +991,19 @@
 
 (defn random-sample
   ([prob]
-   (filter (fn [_] (< (rand) prob))))
+   (when (nil? prob)
+     (throw "random-sample probability must be a number"))
+   (cond
+     (<= prob 0) (filter (fn [_] false))
+     (>= prob 1) (filter (fn [_] true))
+     :else (filter (fn [_] (< (rand) prob)))))
   ([prob coll]
-   (filter (fn [_] (< (rand) prob)) coll)))
+   (when (nil? prob)
+     (throw "random-sample probability must be a number"))
+   (cond
+     (<= prob 0) ()
+     (>= prob 1) coll
+     :else (filter (fn [_] (< (rand) prob)) coll))))
 
 (defn keep
   ([f]

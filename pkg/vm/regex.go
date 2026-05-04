@@ -64,6 +64,10 @@ func (l *Regex) FindAllStringSubmatch(s string, n int) [][]string {
 	return l.re.FindAllStringSubmatch(s, n)
 }
 
+func (l *Regex) Split(s string, n int) []string {
+	return l.re.Split(s, n)
+}
+
 // Pattern returns the regex pattern string.
 func (l *Regex) Pattern() string { return l.re.String() }
 

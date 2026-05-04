@@ -52,6 +52,15 @@ func resolveNSAlias(name string) string {
 	return name
 }
 
+func externalNSName(name string) string {
+	for alias, canonical := range nsAliases {
+		if canonical == name {
+			return alias
+		}
+	}
+	return name
+}
+
 type NSLoader interface {
 	Load(string) *vm.Namespace
 }
@@ -583,6 +592,11 @@ func isNilValue(v vm.Value) bool {
 	return v == nil || v == vm.NIL
 }
 
+func isNaNValue(v vm.Value) bool {
+	f, ok := v.(vm.Float)
+	return ok && math.IsNaN(float64(f))
+}
+
 // seqCompareElements compares two values for ordering, used by compare on seqs.
 func seqCompareElements(a, b vm.Value) int {
 	if a == vm.NIL && b == vm.NIL {
@@ -634,8 +648,11 @@ func nilListEquivalent(a, b vm.Value) bool {
 // isSequentialType returns true for types that participate in cross-type
 // sequential equality (lists, vectors, cons, lazy seqs, ranges — not maps/sets).
 func isSequentialType(v vm.Value) bool {
+	if _, ok := v.(vm.String); ok {
+		return false
+	}
 	switch v.(type) {
-	case vm.ArrayVector, *vm.PersistentVector, *vm.List, *vm.Cons, *vm.LazySeq:
+	case vm.ArrayVector, vm.PersistentVector, *vm.PersistentVector, *vm.List, *vm.Cons, *vm.LazySeq:
 		return true
 	case *vm.PersistentMap, vm.Map, *vm.PersistentSet, vm.Set, *vm.SortedMap, *vm.SortedSet:
 		return false
@@ -730,6 +747,40 @@ func mapLazyN(f vm.Fn, seqs []vm.Seq) vm.Seq {
 	return vm.NewLazySeq(thunk.(vm.Fn))
 }
 
+func fnComparator(comp vm.Fn) vm.Comparator {
+	return func(a, b vm.Value) (int, error) {
+		r, err := comp.Invoke([]vm.Value{a, b})
+		if err != nil {
+			return 0, err
+		}
+		if br, ok := r.(vm.Boolean); ok {
+			if bool(br) {
+				return -1, nil
+			}
+			r, err = comp.Invoke([]vm.Value{b, a})
+			if err != nil {
+				return 0, err
+			}
+			if reverse, ok := r.(vm.Boolean); ok && bool(reverse) {
+				return 1, nil
+			}
+			return 0, nil
+		}
+		n, ok := vm.ToInt(r)
+		if !ok {
+			return 0, fmt.Errorf("comparator returned non-numeric value %s", r.Type().Name())
+		}
+		switch {
+		case n < 0:
+			return -1, nil
+		case n > 0:
+			return 1, nil
+		default:
+			return 0, nil
+		}
+	}
+}
+
 // nolint
 func installLangNS() {
 	plus, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
@@ -813,6 +864,17 @@ func installLangNS() {
 			}
 		}
 		return vm.TRUE, nil
+	})
+
+	notEq, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) < 2 {
+			return vm.FALSE, nil
+		}
+		eq, err := equals.(vm.Fn).Invoke(vs)
+		if err != nil {
+			return vm.NIL, err
+		}
+		return vm.Boolean(!vm.IsTruthy(eq)), nil
 	})
 
 	gt, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
@@ -914,6 +976,27 @@ func installLangNS() {
 		return vm.Boolean(!vm.IsTruthy(vs[0])), nil
 	})
 
+	complement, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
+		}
+		f, ok := vs[0].(vm.Fn)
+		if !ok {
+			return vm.NIL, fmt.Errorf("complement expected Fn")
+		}
+		wrapped, wrapErr := vm.NativeFnType.Wrap(func(args []vm.Value) (vm.Value, error) {
+			v, err := f.Invoke(args)
+			if err != nil {
+				return vm.NIL, err
+			}
+			return vm.Boolean(!vm.IsTruthy(v)), nil
+		})
+		if wrapErr != nil {
+			return vm.NIL, wrapErr
+		}
+		return wrapped, nil
+	})
+
 	setMacro, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 1 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
@@ -968,22 +1051,7 @@ func installLangNS() {
 		if len(kvs)%2 != 0 {
 			return vm.NIL, fmt.Errorf("sorted-map-by requires even number of key-value arguments")
 		}
-		cmp := func(a, b vm.Value) (int, error) {
-			r, err := comp.Invoke([]vm.Value{a, b})
-			if err != nil {
-				return 0, err
-			}
-			n, _ := vm.ToInt(r)
-			switch {
-			case n < 0:
-				return -1, nil
-			case n > 0:
-				return 1, nil
-			default:
-				return 0, nil
-			}
-		}
-		return vm.NewSortedMap(cmp, kvs), nil
+		return vm.NewSortedMap(fnComparator(comp), kvs), nil
 	})
 
 	sortedSetBy, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
@@ -994,22 +1062,7 @@ func installLangNS() {
 		if !ok {
 			return vm.NIL, fmt.Errorf("sorted-set-by first arg must be a function")
 		}
-		cmp := func(a, b vm.Value) (int, error) {
-			r, err := comp.Invoke([]vm.Value{a, b})
-			if err != nil {
-				return 0, err
-			}
-			n, _ := vm.ToInt(r)
-			switch {
-			case n < 0:
-				return -1, nil
-			case n > 0:
-				return 1, nil
-			default:
-				return 0, nil
-			}
-		}
-		return vm.NewSortedSet(cmp, vs[1:]), nil
+		return vm.NewSortedSet(fnComparator(comp), vs[1:]), nil
 	})
 
 	vec, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
@@ -1125,17 +1178,31 @@ func installLangNS() {
 		}
 		if len(vs) == 1 {
 			if vs[0] == vm.NIL {
-				return vm.NIL, nil
+				return vm.NIL, fmt.Errorf("symbol expected String, Symbol, Keyword, or Var")
+			}
+			if v, ok := vs[0].(*vm.Var); ok {
+				return vm.Symbol(externalNSName(v.NS()) + "/" + v.VarName()), nil
 			}
 			if s, ok := toStr(vs[0]); ok {
 				return vm.Symbol(s), nil
 			}
 			return vm.NIL, fmt.Errorf("symbol expected String or Symbol")
 		}
-		nsStr, ok1 := toStr(vs[0])
-		nameStr, ok2 := toStr(vs[1])
-		if !ok1 || !ok2 {
-			return vm.NIL, fmt.Errorf("symbol expected String or Symbol")
+		nsStr := ""
+		if vs[0] != vm.NIL {
+			ns, ok := vs[0].(vm.String)
+			if !ok {
+				return vm.NIL, fmt.Errorf("symbol expected String namespace")
+			}
+			nsStr = string(ns)
+		}
+		name, ok := vs[1].(vm.String)
+		if !ok {
+			return vm.NIL, fmt.Errorf("symbol expected String name")
+		}
+		nameStr := string(name)
+		if nsStr == "" && vs[0] == vm.NIL {
+			return vm.Symbol(nameStr), nil
 		}
 		return vm.Symbol(nsStr + "/" + nameStr), nil
 	})
@@ -1193,7 +1260,7 @@ func installLangNS() {
 			return vm.NIL, fmt.Errorf("update expected Lookup")
 		}
 		key := vs[1]
-		fn := vs[2].(vm.Fn)
+		fn, ok := vs[2].(vm.Fn)
 		if !ok {
 			return vm.NIL, fmt.Errorf("update expected Fn")
 		}
@@ -1529,9 +1596,18 @@ func installLangNS() {
 			if hasDefault {
 				return l.ValueAtOr(vm.Int(n), notFound), nil
 			}
+			if c, ok := vs[0].(vm.Counted); ok && (n < 0 || n >= c.RawCount()) {
+				return vm.NIL, fmt.Errorf("nth index out of bounds")
+			}
 			return l.ValueAt(vm.Int(n)), nil
 		}
 		// Seq path: linear walk
+		if n < 0 {
+			if hasDefault {
+				return notFound, nil
+			}
+			return vm.NIL, fmt.Errorf("nth index out of bounds")
+		}
 		s, err := seqOf(vs[0])
 		if err != nil {
 			return notFound, nil
@@ -1541,6 +1617,9 @@ func installLangNS() {
 				return s.First(), nil
 			}
 			s = s.Next()
+		}
+		if !hasDefault {
+			return vm.NIL, fmt.Errorf("nth index out of bounds")
 		}
 		return notFound, nil
 	})
@@ -2192,7 +2271,13 @@ func installLangNS() {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
 		}
 		m := vs[0]
+		if isNaNValue(m) {
+			return m, nil
+		}
 		for i := 1; i < len(vs); i++ {
+			if isNaNValue(vs[i]) {
+				return vs[i], nil
+			}
 			gt, err := vm.NumGt(vs[i], m)
 			if err != nil {
 				return vm.NIL, err
@@ -2209,7 +2294,13 @@ func installLangNS() {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
 		}
 		m := vs[0]
+		if isNaNValue(m) {
+			return m, nil
+		}
 		for i := 1; i < len(vs); i++ {
+			if isNaNValue(vs[i]) {
+				return vs[i], nil
+			}
 			lt, err := vm.NumLt(vs[i], m)
 			if err != nil {
 				return vm.NIL, err
@@ -2300,15 +2391,19 @@ func installLangNS() {
 		if !ok {
 			return vm.NIL, fmt.Errorf("split expected String")
 		}
-		delim := ""
+		var frags []string
 		if len(vs) == 2 {
-			delimv := vs[1].(vm.String)
-			if !ok {
-				return vm.NIL, fmt.Errorf("split expected String")
+			switch delim := vs[1].(type) {
+			case vm.String:
+				frags = strings.Split(string(s), string(delim))
+			case *vm.Regex:
+				frags = delim.Split(string(s), -1)
+			default:
+				return vm.NIL, fmt.Errorf("split expected String or Regex")
 			}
-			delim = string(delimv)
+		} else {
+			frags = strings.Split(string(s), "")
 		}
-		frags := strings.Split(string(s), delim)
 		var ret vm.Seq = vm.EmptyList
 		l := len(frags)
 		for i := range frags {
@@ -2794,6 +2889,9 @@ func installLangNS() {
 		if len(vs) != 1 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
 		}
+		if vs[0] == vm.NIL {
+			return vm.NIL, nil
+		}
 		coll, ok := vs[0].(vm.Collection)
 		if !ok {
 			return vm.NIL, fmt.Errorf("rand-nth expected Collection")
@@ -2872,11 +2970,11 @@ func installLangNS() {
 		}
 		switch v := vs[0].(type) {
 		case *vm.TransientMap:
-			return v.Persistent(), nil
+			return v.Persistent()
 		case *vm.TransientVector:
-			return v.Persistent(), nil
+			return v.Persistent()
 		case *vm.TransientSet:
-			return v.Persistent(), nil
+			return v.Persistent()
 		default:
 			return vm.NIL, fmt.Errorf("persistent! not supported on %s", vs[0].Type().Name())
 		}
@@ -4353,7 +4451,7 @@ func installLangNS() {
 		}
 		switch vs[0].(type) {
 		case vm.Fn, vm.Keyword, vm.Symbol, *vm.PersistentMap, *vm.PersistentSet,
-			vm.ArrayVector, vm.PersistentVector, *vm.SortedMap, *vm.SortedSet:
+			vm.ArrayVector, vm.PersistentVector, *vm.SortedMap, *vm.SortedSet, *vm.Promise:
 			return vm.TRUE, nil
 		}
 		return vm.FALSE, nil
@@ -4435,6 +4533,7 @@ func installLangNS() {
 	ns.Def("/", div)
 
 	ns.Def("=", equals)
+	ns.Def("not=", notEq)
 	ns.Def("gt", gt)
 	ns.Def("lt", lt)
 	ns.Def("ge", ge)
@@ -4446,6 +4545,7 @@ func installLangNS() {
 	// ns.Def("and", and)
 	// ns.Def("or", or)
 	ns.Def("not", not)
+	ns.Def("complement", complement)
 
 	ns.Def("set-macro!", setMacro)
 	ns.Def("gensym", gensym)
@@ -4839,12 +4939,19 @@ func installLangNS() {
 		case *vm.BigInt:
 			return vm.NewRatio(new(big.Rat).SetInt(v.Val())), nil
 		case vm.Float:
-			r := new(big.Rat).SetFloat64(float64(v))
-			return vm.MaybeSimplifyRatio(r), nil
+			f := float64(v)
+			if math.IsInf(f, 0) || math.IsNaN(f) {
+				return vm.NIL, fmt.Errorf("cannot rationalize %s", vs[0].Type().Name())
+			}
+			if r, ok := new(big.Rat).SetString(strconv.FormatFloat(f, 'f', -1, 64)); ok {
+				return vm.MaybeSimplifyRatio(r), nil
+			}
+			return vm.NIL, fmt.Errorf("cannot rationalize %s", vs[0].Type().Name())
 		case *vm.BigDecimal:
-			f, _ := v.Val().Float64()
-			r := new(big.Rat).SetFloat64(f)
-			return vm.MaybeSimplifyRatio(r), nil
+			if r, ok := new(big.Rat).SetString(v.Val().Text('f', -1)); ok {
+				return vm.MaybeSimplifyRatio(r), nil
+			}
+			return vm.NIL, fmt.Errorf("cannot rationalize %s", vs[0].Type().Name())
 		}
 		return vm.NIL, fmt.Errorf("cannot rationalize %s", vs[0].Type().Name())
 	})

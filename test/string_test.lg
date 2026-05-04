@@ -19,7 +19,8 @@
 (deftest split-test
   (testing "split"
     (is (= '("a" "b" "c") (split "a,b,c" ",")))
-    (is (= '("a" "b" "c") (split "a b c" " ")))))
+    (is (= '("a" "b" "c") (split "a b c" " ")))
+    (is (= '("a" "b" "c") (split "a-b-c" #"-")))))
 
 (deftest str-replace-test
   (testing "str-replace"
@@ -51,4 +52,3 @@
   (testing "symbol"
     (is (= 'foo (symbol "foo")))
     (is (= 'ns/foo (symbol "ns" "foo")))))
-

@@ -66,8 +66,8 @@ func TestPersistentMapDissocToEmpty(t *testing.T) {
 	if m2.RawCount() != 0 {
 		t.Errorf("expected count 0, got %d", m2.RawCount())
 	}
-	if m2 != EmptyPersistentMap {
-		t.Errorf("expected EmptyPersistentMap")
+	if m2.ValueAt(Keyword("a")) != NIL {
+		t.Errorf("expected missing key to return nil, got %v", m2.ValueAt(Keyword("a")))
 	}
 }
 

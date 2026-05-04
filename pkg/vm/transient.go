@@ -94,12 +94,15 @@ func (t *TransientMap) Conj(value Value) (*TransientMap, error) {
 }
 
 // Persistent freezes the transient and returns an immutable PersistentMap.
-func (t *TransientMap) Persistent() *PersistentMap {
+func (t *TransientMap) Persistent() (*PersistentMap, error) {
+	if err := t.ensureEditable(); err != nil {
+		return nil, err
+	}
 	t.edit.Store(false)
 	return &PersistentMap{
 		root:  t.root,
 		count: t.count,
-	}
+	}, nil
 }
 
 // ValueAt for lookups during construction.
@@ -211,14 +214,17 @@ func (t *TransientVector) Pop() (*TransientVector, error) {
 }
 
 // Persistent freezes the transient and returns an immutable vector.
-func (t *TransientVector) Persistent() Value {
+func (t *TransientVector) Persistent() (Value, error) {
+	if err := t.ensureEditable(); err != nil {
+		return NIL, err
+	}
 	t.edit.Store(false)
 	if len(t.array) <= arrayVectorPromotionThreshold {
 		result := make(ArrayVector, len(t.array))
 		copy(result, t.array)
-		return result
+		return result, nil
 	}
-	return NewPersistentVector(t.array)
+	return NewPersistentVector(t.array), nil
 }
 
 func (t *TransientVector) ValueAt(key Value) Value {
@@ -339,12 +345,15 @@ func (t *TransientSet) Disj(value Value) (*TransientSet, error) {
 	return t, nil
 }
 
-func (t *TransientSet) Persistent() *PersistentSet {
+func (t *TransientSet) Persistent() (*PersistentSet, error) {
+	if err := t.ensureEditable(); err != nil {
+		return nil, err
+	}
 	t.edit.Store(false)
 	t.tm.edit.Store(false)
 	return &PersistentSet{
 		impl: &PersistentMap{root: t.tm.root, count: t.tm.count},
-	}
+	}, nil
 }
 
 func (t *TransientSet) ValueAt(key Value) Value {

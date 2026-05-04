@@ -326,7 +326,15 @@ func (l ArrayVector) Invoke(pargs []Value) (Value, error) {
 	if vl != 1 {
 		return NIL, fmt.Errorf("wrong number of arguments %d", vl)
 	}
-	return l.ValueAt(pargs[0]), nil
+	idx, ok := pargs[0].(Int)
+	if !ok {
+		return NIL, fmt.Errorf("vector key must be Int")
+	}
+	i := int(idx)
+	if i < 0 || i >= len(l) {
+		return NIL, fmt.Errorf("index out of bounds: %d", i)
+	}
+	return l[i], nil
 }
 
 func (l ArrayVector) String() string {
