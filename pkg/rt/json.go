@@ -84,7 +84,7 @@ func fromMapValue(v vm.Value) (interface{}, error) {
 
 func fromSeqValue(s vm.Seq) (interface{}, error) {
 	r := []interface{}{}
-	for s != nil {
+	for s != nil && s != vm.EmptyList {
 		uv, e := fromValue(s.First())
 		if e != nil {
 			return vm.NIL, e

@@ -46,8 +46,14 @@
     (is (= "null" (write-json nil)))))
 
 (deftest json-write-collections
+  (testing "empty vector"
+    (is (= "[]" (write-json []))))
+
   (testing "vector"
     (is (= "[1,2,3]" (write-json [1 2 3]))))
+
+  (testing "nested empty vector"
+    (is (= "{\"items\":[]}" (write-json {:items []}))))
 
   (testing "persistent map"
     (let [s (write-json {:a 1})]

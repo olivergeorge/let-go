@@ -191,11 +191,30 @@ func runLGB(filename string) error {
 // checkBundledLGB checks if the current executable has an appended LGB payload.
 // Returns the LGB data or nil if no payload is found.
 func checkBundledLGB() []byte {
-	exe, err := os.Executable()
-	if err != nil {
-		return nil
+	candidates := make([]string, 0, 3)
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		candidates = append(candidates, exe)
 	}
-	f, err := os.Open(exe)
+	if len(os.Args) > 0 && os.Args[0] != "" {
+		candidates = append(candidates, os.Args[0])
+	}
+	candidates = append(candidates, "/proc/self/exe")
+
+	seen := map[string]bool{}
+	for _, path := range candidates {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		if data := readBundledLGB(path); data != nil {
+			return data
+		}
+	}
+	return nil
+}
+
+func readBundledLGB(path string) []byte {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}

@@ -174,6 +174,7 @@ func installSyscallNS() {
 	ns.Def("chroot", unsupported("chroot"))
 	ns.Def("chdir", unsupported("chdir"))
 	ns.Def("mkdir", unsupported("mkdir"))
+	ns.Def("mknod", unsupported("mknod"))
 	ns.Def("rmdir", unsupported("rmdir"))
 	ns.Def("sethostname", unsupported("sethostname"))
 	ns.Def("exec", unsupported("exec"))
@@ -181,6 +182,10 @@ func installSyscallNS() {
 	ns.Def("spawn-async", unsupported("spawn-async"))
 	ns.Def("pipe", unsupported("pipe"))
 	ns.Def("kill", unsupported("kill"))
+	ns.Def("prctl", unsupported("prctl"))
+	ns.Def("capset", unsupported("capset"))
+	ns.Def("seccomp-default", unsupported("seccomp-default"))
+	ns.Def("apparmor-stack-onexec", unsupported("apparmor-stack-onexec"))
 	ns.Def("signal-notify", unsupported("signal-notify"))
 	ns.Def("uname", unsupported("uname"))
 	ns.Def("setuid", unsupported("setuid"))
@@ -215,7 +220,11 @@ func installSyscallNS() {
 	ns.Def("MS_NODEV", vm.MakeInt(4))
 	ns.Def("MS_NOEXEC", vm.MakeInt(8))
 
+	ns.Def("S_IFCHR", vm.MakeInt(0o020000))
+
 	ns.Def("WNOHANG", vm.MakeInt(1))
+	ns.Def("PR_CAPBSET_DROP", vm.MakeInt(24))
+	ns.Def("PR_SET_NO_NEW_PRIVS", vm.MakeInt(38))
 
 	// signals (Linux values — constants load everywhere, call sites error)
 	ns.Def("SIGHUP", vm.MakeInt(1))

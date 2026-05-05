@@ -13,10 +13,118 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/nooga/let-go/pkg/vm"
 )
+
+const (
+	seccompModeFilter            = 2
+	seccompRetKillProcess        = 0x80000000
+	seccompRetErrno              = 0x00050000
+	seccompRetAllow              = 0x7fff0000
+	seccompDataOffsetNR          = 0
+	seccompDataOffsetArch        = 4
+	auditArchX86_64       uint32 = 0xc000003e
+	auditArchAArch64      uint32 = 0xc00000b7
+)
+
+func seccompStmt(code uint16, k uint32) syscall.SockFilter {
+	return *syscall.LsfStmt(int(code), int(k))
+}
+
+func seccompJump(code uint16, k uint32, jt, jf uint8) syscall.SockFilter {
+	return *syscall.LsfJump(int(code), int(k), int(jt), int(jf))
+}
+
+func seccompArch() (uint32, error) {
+	switch runtime.GOARCH {
+	case "amd64":
+		return auditArchX86_64, nil
+	case "arm64":
+		return auditArchAArch64, nil
+	default:
+		return 0, fmt.Errorf("unsupported seccomp arch: %s", runtime.GOARCH)
+	}
+}
+
+func defaultSeccompSyscalls() []uintptr {
+	return []uintptr{
+		unix.SYS_MOUNT,
+		unix.SYS_UMOUNT2,
+		unix.SYS_PIVOT_ROOT,
+		unix.SYS_OPEN_TREE,
+		unix.SYS_MOVE_MOUNT,
+		unix.SYS_FSOPEN,
+		unix.SYS_FSCONFIG,
+		unix.SYS_FSMOUNT,
+		unix.SYS_MOUNT_SETATTR,
+		unix.SYS_UNSHARE,
+		unix.SYS_SETNS,
+		unix.SYS_CLONE3,
+		unix.SYS_BPF,
+		unix.SYS_PERF_EVENT_OPEN,
+		unix.SYS_ADD_KEY,
+		unix.SYS_REQUEST_KEY,
+		unix.SYS_KEYCTL,
+		unix.SYS_KEXEC_LOAD,
+		unix.SYS_OPEN_BY_HANDLE_AT,
+		unix.SYS_INIT_MODULE,
+		unix.SYS_FINIT_MODULE,
+		unix.SYS_DELETE_MODULE,
+		unix.SYS_PTRACE,
+		unix.SYS_PROCESS_VM_READV,
+		unix.SYS_PROCESS_VM_WRITEV,
+		unix.SYS_REBOOT,
+		unix.SYS_SWAPON,
+		unix.SYS_SWAPOFF,
+		unix.SYS_SYSLOG,
+	}
+}
+
+func installDefaultSeccomp() error {
+	arch, err := seccompArch()
+	if err != nil {
+		return err
+	}
+	filters := []syscall.SockFilter{
+		seccompStmt(unix.BPF_LD|unix.BPF_W|unix.BPF_ABS, seccompDataOffsetArch),
+		seccompJump(unix.BPF_JMP|unix.BPF_JEQ|unix.BPF_K, arch, 1, 0),
+		seccompStmt(unix.BPF_RET|unix.BPF_K, seccompRetKillProcess),
+		seccompStmt(unix.BPF_LD|unix.BPF_W|unix.BPF_ABS, seccompDataOffsetNR),
+	}
+	for _, nr := range defaultSeccompSyscalls() {
+		filters = append(filters,
+			seccompJump(unix.BPF_JMP|unix.BPF_JEQ|unix.BPF_K, uint32(nr), 0, 1),
+			seccompStmt(unix.BPF_RET|unix.BPF_K, seccompRetErrno|uint32(syscall.EPERM)),
+		)
+	}
+	filters = append(filters, seccompStmt(unix.BPF_RET|unix.BPF_K, seccompRetAllow))
+	prog := syscall.SockFprog{
+		Len:    uint16(len(filters)),
+		Filter: &filters[0],
+	}
+	_, _, errno := syscall.RawSyscall6(syscall.SYS_PRCTL,
+		uintptr(syscall.PR_SET_SECCOMP),
+		uintptr(seccompModeFilter),
+		uintptr(unsafe.Pointer(&prog)),
+		0, 0, 0)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+func apparmorStackOnExec(profile string) error {
+	if profile == "" {
+		return fmt.Errorf("apparmor profile is required")
+	}
+	return os.WriteFile("/proc/self/attr/exec", []byte("stack "+profile), 0)
+}
 
 func installSyscallNS() {
 	// syscall/clone — (syscall/clone flags) → pid
@@ -252,6 +360,35 @@ func installSyscallNS() {
 		}
 		if err := syscall.Mkdir(string(path), uint32(mode)); err != nil {
 			return vm.NIL, fmt.Errorf("mkdir: %v", err)
+		}
+		return vm.NIL, nil
+	})
+
+	// syscall/mknod — (syscall/mknod path mode major minor)
+	// Creates device nodes inside container filesystems.
+	mknodFn, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 4 {
+			return vm.NIL, fmt.Errorf("syscall/mknod expects 4 args (path mode major minor)")
+		}
+		path, ok := vs[0].(vm.String)
+		if !ok {
+			return vm.NIL, fmt.Errorf("syscall/mknod expected String path")
+		}
+		mode, ok := vs[1].(vm.Int)
+		if !ok {
+			return vm.NIL, fmt.Errorf("syscall/mknod expected Int mode")
+		}
+		major, ok := vs[2].(vm.Int)
+		if !ok {
+			return vm.NIL, fmt.Errorf("syscall/mknod expected Int major")
+		}
+		minor, ok := vs[3].(vm.Int)
+		if !ok {
+			return vm.NIL, fmt.Errorf("syscall/mknod expected Int minor")
+		}
+		dev := int(unix.Mkdev(uint32(major), uint32(minor)))
+		if err := unix.Mknod(string(path), uint32(mode), dev); err != nil {
+			return vm.NIL, fmt.Errorf("mknod: %v", err)
 		}
 		return vm.NIL, nil
 	})
@@ -510,6 +647,102 @@ func installSyscallNS() {
 		return vm.NIL, nil
 	})
 
+	// syscall/prctl — (syscall/prctl option arg2 arg3 arg4 arg5)
+	// Thin prctl(2) wrapper for child-process setup like no_new_privs.
+	prctlFn, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 5 {
+			return vm.NIL, fmt.Errorf("syscall/prctl expects 5 args (option arg2 arg3 arg4 arg5)")
+		}
+		args := make([]uintptr, 5)
+		for i, v := range vs {
+			n, ok := v.(vm.Int)
+			if !ok {
+				return vm.NIL, fmt.Errorf("syscall/prctl expected Int at arg %d", i+1)
+			}
+			args[i] = uintptr(n)
+		}
+		_, _, errno := syscall.Syscall6(syscall.SYS_PRCTL,
+			args[0], args[1], args[2], args[3], args[4], 0)
+		if errno != 0 {
+			return vm.NIL, fmt.Errorf("prctl: %v", errno)
+		}
+		return vm.NIL, nil
+	})
+
+	// syscall/capset — (syscall/capset effective permitted inheritable)
+	// Sets VFS capabilities using Linux capability version 3 masks.
+	capsetFn, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 3 {
+			return vm.NIL, fmt.Errorf("syscall/capset expects 3 args (effective permitted inheritable)")
+		}
+		masks := make([]uint64, 3)
+		for i, v := range vs {
+			n, ok := v.(vm.Int)
+			if !ok {
+				return vm.NIL, fmt.Errorf("syscall/capset expected Int at arg %d", i+1)
+			}
+			masks[i] = uint64(n)
+		}
+		type capUserHeader struct {
+			Version uint32
+			Pid     int32
+		}
+		type capUserData struct {
+			Effective   uint32
+			Permitted   uint32
+			Inheritable uint32
+		}
+		hdr := capUserHeader{Version: 0x20080522}
+		data := [2]capUserData{
+			{
+				Effective:   uint32(masks[0]),
+				Permitted:   uint32(masks[1]),
+				Inheritable: uint32(masks[2]),
+			},
+			{
+				Effective:   uint32(masks[0] >> 32),
+				Permitted:   uint32(masks[1] >> 32),
+				Inheritable: uint32(masks[2] >> 32),
+			},
+		}
+		_, _, errno := syscall.RawSyscall(syscall.SYS_CAPSET,
+			uintptr(unsafe.Pointer(&hdr)),
+			uintptr(unsafe.Pointer(&data[0])),
+			0)
+		if errno != 0 {
+			return vm.NIL, fmt.Errorf("capset: %v", errno)
+		}
+		return vm.NIL, nil
+	})
+
+	// syscall/seccomp-default — (syscall/seccomp-default)
+	// Installs lgcr's built-in default seccomp filter.
+	seccompDefaultFn, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 0 {
+			return vm.NIL, fmt.Errorf("syscall/seccomp-default expects 0 args")
+		}
+		if err := installDefaultSeccomp(); err != nil {
+			return vm.NIL, fmt.Errorf("seccomp-default: %v", err)
+		}
+		return vm.NIL, nil
+	})
+
+	// syscall/apparmor-stack-onexec — (syscall/apparmor-stack-onexec profile)
+	// Schedules an AppArmor profile stack transition at the next exec boundary.
+	apparmorStackOnExecFn, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("syscall/apparmor-stack-onexec expects 1 arg (profile)")
+		}
+		profile, ok := vs[0].(vm.String)
+		if !ok {
+			return vm.NIL, fmt.Errorf("syscall/apparmor-stack-onexec expected String profile")
+		}
+		if err := apparmorStackOnExec(string(profile)); err != nil {
+			return vm.NIL, fmt.Errorf("apparmor-stack-onexec: %v", err)
+		}
+		return vm.NIL, nil
+	})
+
 	// stdioFile resolves a spawn stdio slot value to an *os.File.
 	// nil → opens /dev/null with the given flag.
 	// IOHandle → returns underlying File.
@@ -707,6 +940,7 @@ func installSyscallNS() {
 	ns.Def("chroot", chrootFn)
 	ns.Def("chdir", chdirFn)
 	ns.Def("mkdir", mkdirFn)
+	ns.Def("mknod", mknodFn)
 	ns.Def("mkdir-p", mkdirpFn)
 	ns.Def("rmdir", rmdirFn)
 	ns.Def("rm-rf", rmrfFn)
@@ -723,6 +957,10 @@ func installSyscallNS() {
 	ns.Def("spawn-async", spawnAsyncFn)
 	ns.Def("pipe", pipeFn)
 	ns.Def("kill", killFn)
+	ns.Def("prctl", prctlFn)
+	ns.Def("capset", capsetFn)
+	ns.Def("seccomp-default", seccompDefaultFn)
+	ns.Def("apparmor-stack-onexec", apparmorStackOnExecFn)
 	ns.Def("signal-notify", signalNotifyFn)
 	ns.Def("getpid", getpidFn)
 	ns.Def("getuid", getuidFn)
@@ -749,11 +987,13 @@ func installSyscallNS() {
 	// mount flags
 	ns.Def("MS_BIND", vm.MakeInt(4096))
 	ns.Def("MS_REC", vm.MakeInt(16384))
-	ns.Def("MS_PRIVATE", vm.MakeInt(1 << 18))
+	ns.Def("MS_PRIVATE", vm.MakeInt(1<<18))
 	ns.Def("MS_RDONLY", vm.MakeInt(1))
 	ns.Def("MS_NOSUID", vm.MakeInt(2))
 	ns.Def("MS_NODEV", vm.MakeInt(4))
 	ns.Def("MS_NOEXEC", vm.MakeInt(8))
+
+	ns.Def("S_IFCHR", vm.MakeInt(0o020000))
 
 	// signals
 	ns.Def("SIGHUP", vm.MakeInt(1))
@@ -766,6 +1006,10 @@ func installSyscallNS() {
 
 	// waitpid options
 	ns.Def("WNOHANG", vm.MakeInt(1))
+
+	// prctl options
+	ns.Def("PR_CAPBSET_DROP", vm.MakeInt(24))
+	ns.Def("PR_SET_NO_NEW_PRIVS", vm.MakeInt(38))
 
 	RegisterNS(ns)
 }
