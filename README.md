@@ -48,9 +48,9 @@ it runs unmodified. See [Known limitations](#known-limitations-and-divergence-fr
 ### Clojure compatibility
 
 let-go is tested against [jank-lang/clojure-test-suite](https://github.com/jank-lang/clojure-test-suite),
-a cross-dialect compliance suite covering ~230 `clojure.core` functions:
+a cross-dialect compliance suite:
 
-**4696 / 4921 assertions pass (95.4%)** across 217 test files. The remaining gaps are mostly numeric-tower
+**4696 / 4921 assertions pass (95.4%)** across 217 test files. The remaining gaps are mostly
 edge cases (overflow detection on `+`/`-`/`*`/`inc`/`dec`, BigInt promotion at the Long boundary, BigDecimal
 behavior) and a handful of stub namespaces — see below. Workflow guide: [docs/clojure-test-suite.md](docs/clojure-test-suite.md).
 
