@@ -10,14 +10,14 @@
 Greetings loafers! _(λ-gophers haha, get it?)_
 
 This is a bytecode compiler and VM for a language closely resembling Clojure, a Clojure dialect, if you will.
-Ships as a single ~9MB binary with ~6ms startup time.
+The smallest and fastest-starting Clojure-family language in Go — a single ~10MB binary with ~7ms cold start.
 
 ### Why let-go?
 
 - **Standalone executables** — compile your program into a single binary with `lg -b myapp main.lg`. No runtime needed, just distribute and run.
 - **WASM web apps** — compile your program to a self-contained HTML page with `lg -w outdir main.lg`. Full terminal emulation via xterm.js, runs in any browser. Deploy to GitHub Pages or open locally.
 - **Fast startup** — 6ms cold start. Pre-compiled bytecode (LGB format) makes boot near-instant even with a large standard library.
-- **Small footprint** — 9MB binary, 13MB idle memory. 7x smaller than Babashka, 33x smaller than JDK.
+- **Small footprint** — 10MB binary, 14MB idle memory. 7x smaller than Babashka, 30x smaller than JDK.
 - **Batteries included** — core.async channels, HTTP server/client, JSON, Transit, IO, Babashka pods, nREPL server.
 - **Go interop** — embed let-go in Go apps, map Go structs to records, call Go functions from let-go and vice versa.
 - **Broad Clojure compatibility** — macros, destructuring, protocols, records, multimethods, transducers, lazy seqs, persistent data structures, BigInts.
@@ -41,79 +41,38 @@ Here are the non goals:
 
 ## Feature overview
 
-### Language
+let-go aims to feel like day-to-day Clojure, not to be a drop-in replacement. Most idiomatic code reads,
+runs, and behaves the same — but a non-trivial Clojure project will likely need some adjustments before
+it runs unmodified. See [Known limitations](#known-limitations-and-divergence-from-clojure) below.
 
-- Macros with syntax-quote, unquote, unquote-splicing
-- Destructuring (sequential, associative, `:keys`, `:as`, `:or`)
-- Multi-arity and variadic functions
-- `loop`/`recur` with tail-call optimization
-- `try`/`catch`/`finally`, `throw`, `ex-info`
-- `letfn` for mutual recursion between local functions
-- Dynamic variables with `binding`
-- Lazy sequences (`lazy-seq`, `iterate`, `repeat`, `cycle`)
-- Transducers (`map`, `filter`, `take`, `drop`, `partition-by`, etc. all return transducers with 1-arity)
-- `transduce`, `into` with xform, `completing`, `sequence`, `cat`, `dedupe`
-- Protocols and `extend-type` / `extend-protocol`
-- Records with `defrecord`
-- Multimethods with `defmulti` / `defmethod`
-- Regular expressions (Go flavor)
-- Metadata on collections and vars
+### Clojure compatibility
 
-### Data structures
+let-go is tested against [jank-lang/clojure-test-suite](https://github.com/jank-lang/clojure-test-suite),
+a cross-dialect compliance suite covering ~230 `clojure.core` functions:
 
-- Persistent hash maps (HAMT), vectors, sets
-- Transient collections for efficient batch building
-- `delay` / `force`, `promise` / `deliver`
-- `atom` with watches, `volatile!` for unsynchronized mutation
-- `reduced` for early termination in `reduce`/`transduce`
+**4696 / 4921 assertions pass (95.4%)** across 217 test files. The remaining gaps are mostly numeric-tower
+edge cases (overflow detection on `+`/`-`/`*`/`inc`/`dec`, BigInt promotion at the Long boundary, BigDecimal
+behavior) and a handful of stub namespaces — see below. Workflow guide: [docs/clojure-test-suite.md](docs/clojure-test-suite.md).
 
-### Concurrency (`async` namespace)
+### Standard namespaces
 
-- `go` blocks and `go-loop` — goroutine-based lightweight concurrency
-- Channels with optional buffering, `<!`, `>!`, `close!`
-- `alts!` — select on multiple channel operations with timeout support
-- `offer!` / `poll!` — non-blocking channel ops
-- `mult` / `tap` / `untap` — broadcast
-- `pub` / `sub` / `unsub` — topic-based routing
-- `merge`, `pipe`, `split`, `async/map`, `async/take`
-- `to-chan!`, `onto-chan!`, `async/into`, `async/reduce`
-- `promise-chan`, `timeout`
-
-### IO & Networking (`io` namespace)
-
-- Protocol-based reader/writer coercion (`IReadable`, `IWritable`)
-- `io/reader`, `io/writer` — polymorphic (strings as paths, handles, buffers, URLs)
-- `io/line-seq` — lazy line-by-line reading
-- `io/buffer` — mutable byte buffers
-- `io/copy`, `io/slurp`, `io/spit`, `io/read-lines`, `io/write-lines`
-- `io/url` — parsed URL records, readable via protocol (HTTP GET)
-- Encoding: `io/encode` / `io/decode` (`:base64`, `:hex`, `:url`)
-- Handle-based file IO: `open`, `close!`, `read-line`, `write!`, `read-bytes`
-- `with-open` macro for auto-closing resources
-- `*in*`, `*out*`, `*err*` — stdin/stdout/stderr
-
-### HTTP (`http` namespace)
-
-- Ring-style HTTP server (`http/serve`)
-- HTTP client: `http/get`, `http/post`, `http/request`
-- Streaming responses with `:as :stream`
-- URL records accepted in all client functions
-
-### JSON (`json` namespace)
-
-- `json/read-json`, `json/write-json`
-- Proper float preservation, PersistentMap/Vector support, record serialization
-
-### Transit (`transit` namespace)
-
-- `transit/read`, `transit/write` - transit+json codec
-- Full rolling cache support for compact encoding
-- Keywords, symbols, maps, vectors, sets, lists, big integers
-
-### OS (`os` namespace)
-
-- `os/sh` - run shell commands, capture stdout/stderr/exit code
-- `os/stat`, `os/ls`, `os/cwd`, `os/getenv`, `os/setenv`, `os/exit`
+| Namespace            | Status                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `clojure.core`       | Macros, destructuring, lazy seqs, transducers, protocols, records, multimethods, atoms, regex, metadata, BigInt |
+| `clojure.string`     | Full                                                                                                            |
+| `clojure.set`        | Full                                                                                                            |
+| `clojure.walk`       | `prewalk`, `postwalk`, `keywordize-keys`, `stringify-keys`, `walk`                                              |
+| `clojure.edn`        | `read`, `read-string`                                                                                           |
+| `clojure.pprint`     | `pprint`, `cl-format`                                                                                           |
+| `clojure.test`       | `deftest`, `is`, `testing`, `are`, fixtures                                                                     |
+| `clojure.core.async` | Channels, `go`/`go-loop`, `alts!`, `mult`/`pub`, `pipe`/`merge`/`split` (real goroutines, not IOC)              |
+| `io`                 | Polymorphic readers/writers, `slurp`/`spit`, lazy line-seq, encoding, URLs, `with-open`                         |
+| `http`               | Ring-style server + client, streaming responses                                                                 |
+| `json`               | `read-json`, `write-json` — float-preserving, record-aware                                                      |
+| `transit`            | transit+json codec with rolling cache                                                                           |
+| `os`                 | `sh`, `stat`, `ls`, `cwd`, `getenv`, `setenv`, `exit`                                                           |
+| `syscall`            | Direct Linux syscalls (mount, unshare, mknod, prctl, capset, seccomp, AppArmor) for systems programming         |
+| `pods`               | Babashka pods over JSON / EDN / transit                                                                         |
 
 ### Babashka pods
 
@@ -153,21 +112,6 @@ bb -e '(pods/load-pod (quote org.babashka/go-sqlite3) "0.3.13")'
 - Boxed Go values expose methods via `.method` interop syntax
 - `.field` access on records
 
-### Core library
-
-Comprehensive `clojure.core` coverage including:
-`comp`, `partial`, `juxt`, `complement`, `constantly`, `memoize`, `trampoline`,
-`map`, `filter`, `reduce`, `mapcat`, `keep`, `take`, `drop`, `take-while`, `drop-while`,
-`group-by`, `frequencies`, `partition`, `partition-by`, `interpose`, `interleave`,
-`flatten`, `distinct`, `dedupe`, `sort-by`, `merge-with`, `select-keys`, `update-in`,
-`get-in`, `assoc-in`, `tree-seq`, `cycle`, `doall`, `dorun`, `pmap`,
-`future`, `promise`, `deliver`, `add-watch`, `remove-watch`, `subvec`,
-`compare`, `not-any?`, `not-every?`, `doto`, `fn?`, `replace`, `nthrest`, `nthnext`,
-`bit-and`, `bit-or`, `bit-xor`, `bit-not`, `bit-shift-left`, `bit-shift-right`,
-`re-find`, `re-matches`, `re-seq`, `re-groups`, and many more.
-
-Additional namespaces: `string`, `set`, `walk`, `edn`, `pprint`, `test`, `transit`, `pods`.
-
 ## Benchmarks
 
 Benchmarks compare let-go against [Babashka](https://github.com/babashka/babashka) (GraalVM native),
@@ -178,18 +122,18 @@ Run `benchmark/run.sh` to reproduce (requires `hyperfine`, `bb`, `clj`, `joker`)
 |                 | let-go         | babashka       | joker                    | clojure JVM   |
 | --------------- | -------------- | -------------- | ------------------------ | ------------- |
 | **Platform**    | Go bytecode VM | GraalVM native | Go tree-walk interpreter | JVM (HotSpot) |
-| **Binary size** | **9.4M**       | 68M            | 26M                      | 304M (JDK)    |
-| **Startup**     | **6ms**        | 20ms           | 12ms                     | 353ms         |
-| **Idle memory** | **13MB**       | 27MB           | 21MB                     | 98MB          |
+| **Binary size** | **10M**        | 68M            | 26M                      | 304M (JDK)    |
+| **Startup**     | **7ms**        | 20ms           | 12ms                     | 331ms         |
+| **Idle memory** | **14MB**       | 27MB           | 21MB                     | 92MB          |
 
 **Performance highlights** (Apple M1 Pro):
 
-- **Smallest footprint** — 7x smaller than Babashka, 33x smaller than the JDK
-- **Fastest startup** — 6ms with pre-compiled bytecode (fits in a `requestAnimationFrame`), 3x faster than Babashka, 2x faster than Joker, 57x faster than JVM
-- **Wins on short-lived tasks** — map/filter and transducer pipelines: **6-7ms** vs bb's 20ms (3x faster)
-- **Competitive on compute** — fib(35) within 8% of Babashka (2.1s vs 1.9s), loop-recur 8% faster
-- **Lowest memory** — 14MB for fib(35) vs bb's 77MB (5.7x less), 20MB for reduce 1M vs bb's 59MB (3x less)
-- **10x faster than Joker** on all compute benchmarks — bytecode VM vs tree-walk interpreter
+- **Smallest footprint** — 7x smaller than Babashka, 30x smaller than the JDK
+- **Fastest startup** — 7ms with pre-compiled bytecode (fits in a `requestAnimationFrame`), 3x faster than Babashka, 2x faster than Joker, 48x faster than JVM
+- **Wins on short-lived tasks** — map/filter and transducer pipelines: **8ms** vs bb's 19ms (2.4x faster)
+- **Competitive on compute** — fib(35) within 4% of Babashka (1.98s vs 1.90s), loop-recur 1.8x faster
+- **Lowest memory** — 14MB for fib(35) vs bb's 77MB (5.4x less), 20MB for reduce 1M vs bb's 59MB (3x less)
+- **10x+ faster than Joker** on most compute benchmarks — bytecode VM vs tree-walk interpreter
 
 Full results with methodology: [benchmark/results.md](benchmark/results.md)
 
@@ -200,12 +144,15 @@ Full results with methodology: [benchmark/results.md](benchmark/results.md)
 - **Sorted collections** (`sorted-map`, `sorted-set`)
 - **Refs / STM** — atoms + channels cover practical concurrency needs
 - **Agents** — use `go` blocks and channels instead
+- **Hierarchies** (`derive`, `underive`, `ancestors`, `descendants`, `parents`) — stub only; multimethod dispatch works, but `isa?` chains do not
+- **BigDecimal** — `M` literals parse as floats; no arbitrary-precision decimals or `with-precision`
 - **Chunked sequences** — lazy seqs are unchunked (simpler, slightly different perf characteristics)
 - **Reader tagged literals** (`#inst`, `#uuid`)
 - **`deftype`** — use `defrecord` instead
 - **`reify`** — protocols can only be extended to named types
 - **Spec** — no `clojure.spec`
 - **`alter-var-root`** — vars are mutable but no `alter-var-root`
+- **Numeric overflow detection** — `+`/`-`/`*`/`inc`/`dec` wrap silently on int64 overflow rather than promoting to BigInt; use `+'`/`-'`/`*'` for explicit BigInt math
 
 ### Known behavioral differences
 
@@ -218,10 +165,15 @@ Full results with methodology: [benchmark/results.md](benchmark/results.md)
 
 ## Examples
 
-See:
+Real projects written in let-go:
 
-- [Examples](https://github.com/nooga/let-go/tree/main/examples) for small programs
-- [Tests](https://github.com/nooga/let-go/tree/main/test) for comprehensive `.lg` test files covering all features
+- [**xsofy**](https://github.com/nooga/xsofy) — a roguelike that runs in the browser and the terminal from the same source
+- [**lgcr**](https://github.com/nooga/lgcr) — a decent daemonless container runtime, built on the `syscall` namespace
+
+In this repo:
+
+- [examples/](https://github.com/nooga/let-go/tree/main/examples) — small programs
+- [test/](https://github.com/nooga/let-go/tree/main/test) — `.lg` test files covering all features
 
 ## Try online
 
@@ -338,6 +290,11 @@ The server writes `.nrepl-port` in the current directory so editors auto-discove
 
 ## Embedding in Go
 
+let-go embeds cleanly as a scripting layer for Go programs — define Go values and
+functions, hand them to the VM, and run user-supplied Clojure against your data.
+Go structs roundtrip as records, Go channels are first-class let-go channels, and
+Go functions are callable from let-go code.
+
 ```go
 import (
     "github.com/nooga/let-go/pkg/api"
@@ -346,22 +303,50 @@ import (
 
 c, _ := api.NewLetGo("myapp")
 
-// Define Go values in let-go
+// Expose Go values and functions to let-go
 c.Def("x", 42)
 c.Def("greet", func(name string) string {
     return "Hello, " + name
 })
 
-// Run let-go code
 v, _ := c.Run(`(greet "world")`)
 fmt.Println(v) // "Hello, world"
-
-// Struct <-> Record interop
-type Point struct { X, Y int }
-vm.RegisterStruct[Point]("myapp/Point")
-c.Def("p", Point{3, 4})
-v, _ = c.Run(`(:x p)`) // 3
 ```
+
+**Struct ↔ Record roundtrip.** Registered structs become records on the let-go
+side. Unmutated values unbox back to the original Go type for free; mutated ones
+go through `vm.ToStruct[T]`.
+
+```go
+type Item struct{ Name string; Price float64; Qty int }
+vm.RegisterStruct[Item]("myapp/Item")
+
+c.Def("item", Item{Name: "Widget", Price: 9.99, Qty: 5})
+c.Run(`(:name item)`)        // "Widget"
+c.Run(`(* (:price item) (:qty item))`) // 49.95
+
+// Define a let-go function that processes Go structs
+c.Run(`(defn total [it] (* (:price it) (:qty it)))`)
+v, _ := c.Run(`(total item)`) // 49.95
+```
+
+**Streaming via Go channels.** A Go `chan int` and a `vm.Chan` plug straight
+into `go`/`<!`/`>!` — perfect for piping events through a user-supplied script.
+
+```go
+inch := make(chan int)
+outch := make(vm.Chan)
+c.Def("in", inch)
+c.Def("out", outch)
+
+c.Run(`(go (loop [i (<! in)]
+             (when i
+               (>! out (inc i))
+               (recur (<! in)))))`)
+```
+
+See [`pkg/api/interop_test.go`](pkg/api/interop_test.go) for the full set of
+embedding examples (defs, structs, channels, function calls).
 
 ## Testing
 
