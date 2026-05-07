@@ -20,6 +20,12 @@ import (
 // harmless). If you need real terminal control on plan9, wire in /dev/cons here.
 
 func installTermNS() {
+	// rio doesn't render ANSI escapes — flip *ansi?* so user code (e.g.
+	// the test runner's PASS/FAIL printer) can avoid emitting them.
+	if v, ok := CoreNS.Lookup("*ansi?*").(*vm.Var); ok {
+		v.SetRoot(vm.FALSE)
+	}
+
 	ns := vm.NewNamespace("term")
 	ns.Refer(CoreNS, "", true)
 

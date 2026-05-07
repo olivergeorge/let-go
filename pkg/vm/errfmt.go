@@ -59,7 +59,7 @@ func FormatError(err error) string {
 	root := frames[len(frames)-1]
 
 	// Error header
-	fmt.Fprintf(&b, "\x1b[1;31merror:\x1b[0m %s\n", root.msg)
+	fmt.Fprintf(&b, ansiBoldRed + "error:" + ansiReset + " %s\n", root.msg)
 
 	// Source snippet for the deepest frame that has source info
 	for i := len(frames) - 1; i >= 0; i-- {
@@ -78,7 +78,7 @@ func FormatError(err error) string {
 		}
 	}
 	if hasTrace {
-		b.WriteString("\n\x1b[1mstack trace:\x1b[0m\n")
+		b.WriteString("\n" + ansiBold + "stack trace:" + ansiReset + "\n")
 		for i := len(frames) - 2; i >= 0; i-- {
 			f := frames[i]
 			loc := "<unknown>"
@@ -97,7 +97,7 @@ func formatCompileError(ce compileErrorLike) string {
 	msg := ce.InnermostMessage()
 	src := ce.InnermostSource()
 
-	fmt.Fprintf(&b, "\x1b[1;31merror:\x1b[0m %s\n", msg)
+	fmt.Fprintf(&b, ansiBoldRed + "error:" + ansiReset + " %s\n", msg)
 	if src != nil {
 		writeSnippet(&b, src)
 	}
@@ -107,7 +107,7 @@ func formatCompileError(ce compileErrorLike) string {
 func writeSnippet(b *strings.Builder, info *SourceInfo) {
 	line := SourceRegistry.GetLine(info.File, info.Line)
 	if line == "" {
-		fmt.Fprintf(b, "  \x1b[1;34m-->\x1b[0m %s\n", info.String())
+		fmt.Fprintf(b, "  " + ansiBoldBlue + "-->" + ansiReset + " %s\n", info.String())
 		return
 	}
 
@@ -115,15 +115,15 @@ func writeSnippet(b *strings.Builder, info *SourceInfo) {
 	width := len(fmt.Sprintf("%d", lineNum))
 	padding := strings.Repeat(" ", width)
 
-	fmt.Fprintf(b, "  \x1b[1;34m-->\x1b[0m %s\n", info.String())
-	fmt.Fprintf(b, " %s \x1b[1;34m|\x1b[0m\n", padding)
-	fmt.Fprintf(b, " \x1b[1;34m%d\x1b[0m \x1b[1;34m|\x1b[0m %s\n", lineNum, line)
+	fmt.Fprintf(b, "  " + ansiBoldBlue + "-->" + ansiReset + " %s\n", info.String())
+	fmt.Fprintf(b, " %s " + ansiBoldBlue + "|" + ansiReset + "\n", padding)
+	fmt.Fprintf(b, " " + ansiBoldBlue + "%d" + ansiReset + " " + ansiBoldBlue + "|" + ansiReset + " %s\n", lineNum, line)
 
 	// Position indicator
 	col := info.Column
 	if col < 0 {
 		col = 0
 	}
-	pointer := strings.Repeat(" ", col) + "\x1b[1;31m^^^\x1b[0m"
-	fmt.Fprintf(b, " %s \x1b[1;34m|\x1b[0m %s\n", padding, pointer)
+	pointer := strings.Repeat(" ", col) + ansiBoldRed + "^^^" + ansiReset
+	fmt.Fprintf(b, " %s " + ansiBoldBlue + "|" + ansiReset + " %s\n", padding, pointer)
 }

@@ -4506,6 +4506,10 @@ func installLangNS() {
 	CurrentNS = ns.Def("*ns*", ns)
 	ns.Def("*compiling-aot*", vm.FALSE)
 	ns.Def("*in-wasm*", vm.FALSE)
+	// True if the host terminal renders ANSI escape sequences. Defaults to
+	// true; flipped to false on platforms that don't (e.g. plan9 / rio —
+	// see term_plan9.go).
+	ns.Def("*ansi?*", vm.TRUE)
 
 	// Bootstrap no-op ns macro so source files can declare namespaces before core macro is loaded.
 	// Expands (ns name ...) to (in-ns 'name), ignoring options.
