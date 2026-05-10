@@ -16,7 +16,7 @@ The smallest and fastest-starting Clojure-family language in Go — a single ~10
 
 - **Standalone executables** — compile your program into a single binary with `lg -b myapp main.lg`. No runtime needed, just distribute and run.
 - **WASM web apps** — compile your program to a self-contained HTML page with `lg -w outdir main.lg`. Full terminal emulation via xterm.js, runs in any browser. Deploy to GitHub Pages or open locally.
-- **Fast startup** — 6ms cold start. Pre-compiled bytecode (LGB format) makes boot near-instant even with a large standard library.
+- **Fast startup** — 7ms cold start. Pre-compiled bytecode (LGB format) makes boot near-instant even with a large standard library.
 - **Small footprint** — 10MB binary, 14MB idle memory. 7x smaller than Babashka, 30x smaller than JDK.
 - **Batteries included** — core.async channels, HTTP server/client, JSON, Transit, IO, Babashka pods, nREPL server.
 - **Go interop** — embed let-go in Go apps, map Go structs to records, call Go functions from let-go and vice versa.
@@ -256,7 +256,7 @@ For GitHub Pages deployment, just point Pages at the output directory. The servi
   (-main))
 ```
 
-**Detecting WASM at runtime** — the `*in-wasm*` var is `true` when running inside a WASM web app, `false` in native mode. Use it to disable file I/O, adjust animation timing, or enable browser-specific behavior:
+**Detecting WASM at runtime** - the `*in-wasm*` var is `true` when running inside a WASM web app, `false` in native mode. Use it to disable file I/O, adjust animation timing, or enable browser-specific behavior:
 
 ```clojure
 (when-not *in-wasm*
