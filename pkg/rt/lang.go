@@ -2331,14 +2331,15 @@ func installLangNS() {
 		if len(vs) < 1 || len(vs) > 2 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
 		}
-		var comp vm.Fn
+		var comp vm.Comparator
 		var coll vm.Collection
 		var ok bool
 		if len(vs) == 2 {
-			comp, ok = vs[0].(vm.Fn)
+			compFn, ok := vs[0].(vm.Fn)
 			if !ok {
 				return vm.NIL, fmt.Errorf("sort expected a comparator function")
 			}
+			comp = fnComparator(compFn)
 			coll, ok = vs[1].(vm.Collection)
 			if !ok {
 				return vm.NIL, fmt.Errorf("sort expected a Collection")
@@ -2362,12 +2363,12 @@ func installLangNS() {
 				return false
 			}
 			if comp != nil {
-				var b vm.Value
-				b, err = comp.Invoke([]vm.Value{temp[i], temp[j]})
+				var c int
+				c, err = comp(temp[i], temp[j])
 				if err != nil {
 					return false
 				}
-				return vm.IsTruthy(b)
+				return c < 0
 			}
 			// Default: general compare
 			var c int
@@ -3887,117 +3888,11 @@ func installLangNS() {
 		if len(vs) != 2 {
 			return vm.NIL, fmt.Errorf("compare expects 2 args")
 		}
-		a, b := vs[0], vs[1]
-		// nil sorts before everything
-		if a == vm.NIL && b == vm.NIL {
-			return vm.MakeInt(0), nil
+		c, err := vm.DefaultCompare(vs[0], vs[1])
+		if err != nil {
+			return vm.NIL, err
 		}
-		if a == vm.NIL {
-			return vm.MakeInt(-1), nil
-		}
-		if b == vm.NIL {
-			return vm.MakeInt(1), nil
-		}
-		// Numbers (including BigInt)
-		if vm.IsNumber(a) && vm.IsNumber(b) {
-			lt, err := vm.NumLt(a, b)
-			if err != nil {
-				return vm.NIL, err
-			}
-			if lt {
-				return vm.MakeInt(-1), nil
-			}
-			gt, err := vm.NumGt(a, b)
-			if err != nil {
-				return vm.NIL, err
-			}
-			if gt {
-				return vm.MakeInt(1), nil
-			}
-			return vm.MakeInt(0), nil
-		}
-		// Strings
-		if sa, ok := a.(vm.String); ok {
-			if sb, ok := b.(vm.String); ok {
-				as, bs := string(sa), string(sb)
-				if as < bs {
-					return vm.MakeInt(-1), nil
-				}
-				if as > bs {
-					return vm.MakeInt(1), nil
-				}
-				return vm.MakeInt(0), nil
-			}
-		}
-		// Keywords
-		if ka, ok := a.(vm.Keyword); ok {
-			if kb, ok := b.(vm.Keyword); ok {
-				as, bs := string(ka), string(kb)
-				if as < bs {
-					return vm.MakeInt(-1), nil
-				}
-				if as > bs {
-					return vm.MakeInt(1), nil
-				}
-				return vm.MakeInt(0), nil
-			}
-		}
-		// Booleans (false < true)
-		if ba, ok := a.(vm.Boolean); ok {
-			if bb, ok := b.(vm.Boolean); ok {
-				if ba == bb {
-					return vm.MakeInt(0), nil
-				}
-				if !bool(ba) {
-					return vm.MakeInt(-1), nil
-				}
-				return vm.MakeInt(1), nil
-			}
-		}
-		// Characters
-		if ca, ok := a.(vm.Char); ok {
-			if cb, ok := b.(vm.Char); ok {
-				if rune(ca) < rune(cb) {
-					return vm.MakeInt(-1), nil
-				}
-				if rune(ca) > rune(cb) {
-					return vm.MakeInt(1), nil
-				}
-				return vm.MakeInt(0), nil
-			}
-		}
-		// Symbols
-		if sa, ok := a.(vm.Symbol); ok {
-			if sb, ok := b.(vm.Symbol); ok {
-				as, bs := string(sa), string(sb)
-				if as < bs {
-					return vm.MakeInt(-1), nil
-				}
-				if as > bs {
-					return vm.MakeInt(1), nil
-				}
-				return vm.MakeInt(0), nil
-			}
-		}
-		// Vectors: lexicographic comparison
-		if isSequentialType(a) && isSequentialType(b) {
-			as, bs := toSeq(a), toSeq(b)
-			for as != nil && bs != nil {
-				cmp := seqCompareElements(as.First(), bs.First())
-				if cmp != 0 {
-					return vm.MakeInt(cmp), nil
-				}
-				as, bs = as.Next(), bs.Next()
-			}
-			if as == nil && bs == nil {
-				return vm.MakeInt(0), nil
-			}
-			if as == nil {
-				return vm.MakeInt(-1), nil
-			}
-			return vm.MakeInt(1), nil
-		}
-		return vm.NIL, fmt.Errorf("compare: cannot compare %s and %s", a.Type().Name(), b.Type().Name())
+		return vm.MakeInt(c), nil
 	})
 
 	// print — like println but no newline, space-separated

@@ -1,0 +1,159 @@
+(ns test.sort-compat-test
+  (:require [test :refer :all]))
+
+(def simple-vec-maps
+  [{:a 2 :b 9}
+   {:a 1 :b 10}
+   {:a 4 :b 7}
+   {:a 3 :b 8}])
+
+(def stable-data
+  [{:a 1 :b 11}
+   {:a 1 :b 21}
+   {:a 1 :b 39}
+   {:a 1 :b 2}
+   {:a 4 :b 5}
+   {:a 2 :b 101}
+   {:a 2 :b 71}
+   {:a 2 :b 28}
+   {:a 2 :b 99}
+   {:a 4 :b 210}
+   {:a 3 :b 113}
+   {:a 3 :b 412}
+   {:a 3 :b 135}
+   {:a 3 :b 314}
+   {:a 4 :b 215}])
+
+(deftest sort-clojure-compatible-unary
+  (testing "sort matches Clojure common unary cases"
+    (is (= '() (sort nil)))
+    (is (= '(1 2 3 4) (sort [3 1 2 4])))
+    (is (= '(nil 2 3 4) (sort [3 nil 2 4])))
+    (is (= '(1 2 3 4) (sort '(3 1 2 4))))
+    (is (= '(1 2 3 4) (sort #{3 1 2 4})))
+    (is (= '([:a 1] [:b 2] [:c 3]) (sort {:c 3 :b 2 :a 1})))
+    (is (= '([1] [2] [3] [4]) (sort [[3] [1] [2] [4]])))
+    (is (= '("a" "b" "c" "d") (sort ["b" "a" "c" "d"])))
+    (is (= '(\c \e \j \l \o \r \u) (sort "clojure")))))
+
+(deftest sort-clojure-compatible-comparators
+  (testing "sort accepts numeric comparators"
+    (is (= '(1 2 3 4) (sort compare [3 1 2 4])))
+    (is (= '(4 3 2 1) (sort (fn [a b] (- (compare a b))) [1 2 3 4]))))
+
+  (testing "sort accepts boolean comparators"
+    (is (= '(1 2 3 4) (sort < [3 1 2 4])))
+    (is (= '(4 3 2 1) (sort > [1 2 3 4]))))
+
+  (testing "sort is stable"
+    (is (= '([1 :a] [1 :e] [2 :b] [2 :d] [3 :c])
+           (sort (fn [[a _] [b _]] (compare a b))
+                 [[1 :a] [2 :b] [3 :c] [2 :d] [1 :e]])))))
+
+(deftest sort-by-clojure-compatible-arity-2
+  (testing "sort-by identity matches sort"
+    (is (= (sort nil) (sort-by identity nil)))
+    (is (= (sort [3 1 2 4]) (sort-by identity [3 1 2 4])))
+    (is (= (sort [3 nil 2 4]) (sort-by identity [3 nil 2 4])))
+    (is (= (sort '(3 1 2 4)) (sort-by identity '(3 1 2 4))))
+    (is (= (sort #{3 1 2 4}) (sort-by identity #{3 1 2 4})))
+    (is (= (sort {:c 3 :b 2 :a 1}) (sort-by identity {:c 3 :b 2 :a 1})))
+    (is (= (sort [[3] [1] [2] [4]]) (sort-by identity [[3] [1] [2] [4]])))
+    (is (= (sort ["b" "a" "c" "d"]) (sort-by identity ["b" "a" "c" "d"])))
+    (is (= (sort "clojure") (sort-by identity "clojure"))))
+
+  (testing "sort-by key function matches Clojure ordering and stability"
+    (is (= '({:a 4 :b 7}
+             {:a 3 :b 8}
+             {:a 2 :b 9}
+             {:a 1 :b 10})
+           (sort-by :b simple-vec-maps)))
+    (is (= '({:a 1 :b 10}
+             {:a 2 :b 9}
+             {:a 3 :b 8}
+             {:a 4 :b 7})
+           (sort-by :a simple-vec-maps)))
+    (is (= (seq simple-vec-maps)
+           (sort-by (fn [m] (+ (:a m) (:b m))) simple-vec-maps)))
+    (is (= (seq simple-vec-maps)
+           (sort-by :c simple-vec-maps)))
+    (is (= '({:a nil} {:a 1})
+           (sort-by :a [{:a 1} {:a nil}])))))
+
+(deftest sort-by-clojure-compatible-arity-3
+  (testing "sort-by accepts numeric comparators"
+    (is (= '({:a 1 :b 10}
+             {:a 2 :b 9}
+             {:a 3 :b 8}
+             {:a 4 :b 7})
+           (sort-by :a compare simple-vec-maps)))
+    (is (= '({:a 4 :b 7}
+             {:a 3 :b 8}
+             {:a 2 :b 9}
+             {:a 1 :b 10})
+           (sort-by :a (fn [a b] (compare b a)) simple-vec-maps)))
+    (is (= '({:a 4 :b 7}
+             {:a 3 :b 8}
+             {:a 2 :b 9}
+             {:a 1 :b 10})
+           (sort-by :b compare simple-vec-maps)))
+    (is (= '({:a 1 :b 10}
+             {:a 2 :b 9}
+             {:a 3 :b 8}
+             {:a 4 :b 7})
+           (sort-by :b (fn [a b] (compare b a)) simple-vec-maps))))
+
+  (testing "sort-by accepts boolean comparators"
+    (is (= '({:a 1 :b 10}
+             {:a 2 :b 9}
+             {:a 3 :b 8}
+             {:a 4 :b 7})
+           (sort-by :a < simple-vec-maps)))
+    (is (= '({:a 4 :b 7}
+             {:a 3 :b 8}
+             {:a 2 :b 9}
+             {:a 1 :b 10})
+           (sort-by :a > simple-vec-maps)))
+    (is (= '({:a 4 :b 7}
+             {:a 3 :b 8}
+             {:a 2 :b 9}
+             {:a 1 :b 10})
+           (sort-by :b < simple-vec-maps)))
+    (is (= '({:a 1 :b 10}
+             {:a 2 :b 9}
+             {:a 3 :b 8}
+             {:a 4 :b 7})
+           (sort-by :b > simple-vec-maps)))))
+
+(deftest sort-by-clojure-compatible-stability
+  (testing "stable chained sort-by matches Clojure"
+    (is (= '({:a 1 :b 2}
+             {:a 1 :b 11}
+             {:a 1 :b 21}
+             {:a 1 :b 39}
+             {:a 2 :b 28}
+             {:a 2 :b 71}
+             {:a 2 :b 99}
+             {:a 2 :b 101}
+             {:a 3 :b 113}
+             {:a 3 :b 135}
+             {:a 3 :b 314}
+             {:a 3 :b 412}
+             {:a 4 :b 5}
+             {:a 4 :b 210}
+             {:a 4 :b 215})
+           (->> stable-data
+                (sort-by :b)
+                (sort-by :a))))))
+
+(deftest sort-clojure-compatible-negative-cases
+  (testing "sort and sort-by throw like Clojure for invalid arguments"
+    (is (= :caught (try (sort 1) (catch e :caught))))
+    (is (= :caught (try (sort [1 []]) (catch e :caught))))
+    (is (= :caught (try (sort '((2) (1))) (catch e :caught))))
+    (is (= :caught (try (sort-by nil simple-vec-maps) (catch e :caught))))
+    (is (= :caught (try (sort-by [] simple-vec-maps) (catch e :caught))))
+    (is (= :caught (try (sort-by :a nil simple-vec-maps) (catch e :caught))))
+    (is (= :caught (try (sort-by :a [] simple-vec-maps) (catch e :caught))))
+    (is (= :caught (try (sort-by :a 1) (catch e :caught))))
+    (is (= :caught (try (sort-by :a true) (catch e :caught))))))

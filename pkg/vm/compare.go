@@ -12,7 +12,7 @@ type Comparator func(a, b Value) (int, error)
 
 func isSeqComparable(v Value) bool {
 	switch v.(type) {
-	case ArrayVector, PersistentVector, *List, *Cons:
+	case ArrayVector, PersistentVector, *PersistentVector, MapEntry:
 		return true
 	}
 	return false
