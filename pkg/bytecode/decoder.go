@@ -473,6 +473,16 @@ func (d *decoder) readValue() (vm.Value, error) {
 			return nil, fmt.Errorf("invalid UUID in bytecode: %q", s)
 		}
 		return u, nil
+	case TagInstant:
+		s, err := d.readStringRef()
+		if err != nil {
+			return nil, err
+		}
+		i := vm.ParseInstant(s)
+		if i == nil {
+			return nil, fmt.Errorf("invalid #inst in bytecode: %q", s)
+		}
+		return i, nil
 	case TagFunc:
 		chunkIdx, err := d.r.ReadVarint()
 		if err != nil {

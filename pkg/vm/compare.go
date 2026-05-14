@@ -107,6 +107,18 @@ func DefaultCompare(a, b Value) (int, error) {
 				return 0, nil
 			}
 		}
+	case *Instant:
+		if vb, ok := b.(*Instant); ok {
+			am, bm := va.t.UnixMilli(), vb.t.UnixMilli()
+			switch {
+			case am < bm:
+				return -1, nil
+			case am > bm:
+				return 1, nil
+			default:
+				return 0, nil
+			}
+		}
 	}
 	// Vectors/sequential: lexicographic comparison
 	if isSeqComparable(a) && isSeqComparable(b) {

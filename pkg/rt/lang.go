@@ -5577,6 +5577,16 @@ func installLangNS() {
 	})
 	ns.Def("uuid?", isUUID)
 
+	// inst? — type predicate for Instant
+	isInst, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.FALSE, nil
+		}
+		_, ok := vs[0].(*vm.Instant)
+		return vm.Boolean(ok), nil
+	})
+	ns.Def("inst?", isInst)
+
 	// parse-uuid — parse a string into a UUID
 	parseUUID, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 1 {

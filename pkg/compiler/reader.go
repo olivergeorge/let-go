@@ -1355,6 +1355,16 @@ func readTaggedLiteral(r *LispReader, firstCh rune) (vm.Value, error) {
 			return vm.NIL, NewReaderError(r, fmt.Sprintf("invalid UUID string: %s", s))
 		}
 		return u, nil
+	case "inst":
+		s, ok := val.(vm.String)
+		if !ok {
+			return vm.NIL, NewReaderError(r, fmt.Sprintf("#inst requires a string, got %s", val.Type().Name()))
+		}
+		i := vm.ParseInstant(string(s))
+		if i == nil {
+			return vm.NIL, NewReaderError(r, fmt.Sprintf("invalid #inst literal: %s", s))
+		}
+		return i, nil
 	default:
 		// Unknown tags: just return the value (best-effort)
 		return val, nil

@@ -122,7 +122,7 @@ for what's available.
 - **Hierarchies** (`derive`, `underive`, `ancestors`, `descendants`, `parents`): stubs only
 - **`with-precision`**: `BigDecimal` works (`M` literals, `bigdec`, exact arithmetic) but `with-precision` is a no-op
 - **Chunked sequences**: lazy seqs are unchunked
-- **Reader tagged literals** (`#inst`, `#uuid`)
+- **Custom tagged literal readers**: built-in `#uuid` and `#inst` work; `*data-readers*` / `*default-data-reader-fn*` are not implemented
 - **`deftype`** (use `defrecord`)
 - **`reify`** (protocols can only be extended to named types)
 - **Spec** (no `clojure.spec`)
