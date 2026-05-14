@@ -5438,7 +5438,7 @@ func installLangNS() {
 	// Reads/writes the root, bypassing any current dynamic binding.
 	// TODO: the read/apply/write is not atomic. let-go evaluates synchronously
 	// today, so contention does not arise. If concurrent evaluation is added,
-	// centralize the RMW under Var-level synchronization.
+	// centralize the read/apply/write under Var-level synchronization.
 	alterVarRoot, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) < 2 {
 			return vm.NIL, fmt.Errorf("alter-var-root expects at least 2 args")
