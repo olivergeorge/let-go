@@ -3245,6 +3245,65 @@ func installLangNS() {
 		return vm.Boolean(protocol.Satisfies(vs[1])), nil
 	})
 
+	// make-reified: build a *Reified from a {protocol {method-sym fn ...} ...} spec.
+	// Called by the reify macro. Partial impls are allowed (missing methods
+	// raise a generic "not implemented" error at call time via ProtocolFn.Invoke).
+	makeReified, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("make-reified expected 1 argument, got %d", len(vs))
+		}
+		spec, ok := vs[0].(*vm.PersistentMap)
+		if !ok {
+			return vm.NIL, fmt.Errorf("make-reified expected map, got %s", vs[0].Type().Name())
+		}
+		impls := make(map[*vm.Protocol]map[vm.Symbol]vm.Fn)
+		s := spec.Seq()
+		for s != nil && s != vm.EmptyList {
+			key, val, ok := vm.MapEntryKV(s.First())
+			if !ok {
+				return vm.NIL, fmt.Errorf("make-reified expected map entries")
+			}
+			proto, ok := key.(*vm.Protocol)
+			if !ok {
+				return vm.NIL, fmt.Errorf("reify: %s is not a protocol", key.String())
+			}
+			methods, ok := val.(*vm.PersistentMap)
+			if !ok {
+				return vm.NIL, fmt.Errorf("reify: %s impl spec is not a map", proto.Name())
+			}
+			known := make(map[vm.Symbol]bool, len(proto.Methods()))
+			for _, m := range proto.Methods() {
+				known[m] = true
+			}
+			methodImpls := make(map[vm.Symbol]vm.Fn)
+			ms := methods.Seq()
+			for ms != nil && ms != vm.EmptyList {
+				mk, mv, ok := vm.MapEntryKV(ms.First())
+				if !ok {
+					return vm.NIL, fmt.Errorf("reify: malformed method entry")
+				}
+				mname, ok := mk.(vm.Symbol)
+				if !ok {
+					return vm.NIL, fmt.Errorf("reify: method name %s is not a symbol", mk.String())
+				}
+				if !known[mname] {
+					return vm.NIL, fmt.Errorf("reify: %s is not a method of protocol %s",
+						mname, proto.Name())
+				}
+				mfn, ok := mv.(vm.Fn)
+				if !ok {
+					return vm.NIL, fmt.Errorf("reify: impl for %s/%s is not a function",
+						proto.Name(), mname)
+				}
+				methodImpls[mname] = mfn
+				ms = ms.Next()
+			}
+			impls[proto] = methodImpls
+			s = s.Next()
+		}
+		return vm.NewReified(impls), nil
+	})
+
 	// defmulti*: create a multimethod (called by defmulti macro)
 	defMulti, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) < 2 || len(vs) > 3 {
@@ -4598,6 +4657,7 @@ func installLangNS() {
 	ns.Def("make-protocol-fn", makeProtocolFn)
 	ns.Def("extend-type*", extendType)
 	ns.Def("satisfies?", satisfies)
+	ns.Def("make-reified", makeReified)
 	ns.Def("defmulti*", defMulti)
 	ns.Def("defmethod*", defMethod)
 	ns.Def("methods", methods)

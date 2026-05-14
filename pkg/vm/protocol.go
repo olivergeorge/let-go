@@ -42,11 +42,9 @@ func (p *Protocol) ExtendNil(implMap *PersistentMap) {
 
 // Lookup finds the implementation of a method for a given value's type.
 func (p *Protocol) Lookup(methodName Symbol, target Value) (Fn, bool) {
-	key := Keyword(methodName)
-
 	if target == NIL {
 		if p.nilImpl != nil {
-			v := p.nilImpl.ValueAt(key)
+			v := p.nilImpl.ValueAt(Keyword(methodName))
 			if v != NIL {
 				if fn, ok := v.(Fn); ok {
 					return fn, true
@@ -56,13 +54,30 @@ func (p *Protocol) Lookup(methodName Symbol, target Value) (Fn, bool) {
 		return nil, false
 	}
 
+	// Single Type() call shared by the reify fast path and the type-keyed
+	// fallback. ReifiedType is a singleton, so the equality check is a
+	// pointer compare — cheaper than an interface assertion on every call.
 	vt := target.Type()
+	if vt == ReifiedType {
+		r := target.(*Reified)
+		if fn, ok := r.Impl(p, methodName); ok {
+			return fn, true
+		}
+		if r.Claims(p) {
+			// Claimed protocol but didn't implement this specific method.
+			// Lock here — don't fall through to the type-keyed table.
+			return nil, false
+		}
+		// Doesn't claim p; allow type-keyed fallback (rare; only matters if
+		// someone deliberately extends ReifiedType for some protocol).
+	}
+
 	implMap, ok := p.impls[vt]
 	if !ok {
 		return nil, false
 	}
 
-	v := implMap.ValueAt(key)
+	v := implMap.ValueAt(Keyword(methodName))
 	if v == NIL {
 		return nil, false
 	}
@@ -76,7 +91,14 @@ func (p *Protocol) Satisfies(target Value) bool {
 	if target == NIL {
 		return p.nilImpl != nil
 	}
-	_, ok := p.impls[target.Type()]
+	vt := target.Type()
+	if vt == ReifiedType {
+		if target.(*Reified).Claims(p) {
+			return true
+		}
+		// fall through (in case ReifiedType is extended to p type-wise)
+	}
+	_, ok := p.impls[vt]
 	return ok
 }
 
@@ -106,16 +128,23 @@ func (f *ProtocolFn) Invoke(args []Value) (Value, error) {
 	}
 
 	impl, ok := f.protocol.Lookup(f.methodName, args[0])
-	if !ok {
-		typeName := "nil"
-		if args[0] != NIL {
-			typeName = args[0].Type().Name()
-		}
-		return NIL, fmt.Errorf("no implementation of protocol %s method %s for type %s",
-			f.protocol.name, f.name, typeName)
+	if ok {
+		return impl.Invoke(args)
 	}
 
-	return impl.Invoke(args)
+	// Miss: distinguish "value doesn't satisfy the protocol" from
+	// "value satisfies but this method isn't implemented" (the latter case also
+	// triggers for partial extend-type, hence the generic error string).
+	typeName := "nil"
+	if args[0] != NIL {
+		typeName = args[0].Type().Name()
+	}
+	if f.protocol.Satisfies(args[0]) {
+		return NIL, fmt.Errorf("method %s of protocol %s not implemented for type %s",
+			f.name, f.protocol.name, typeName)
+	}
+	return NIL, fmt.Errorf("no implementation of protocol %s method %s for type %s",
+		f.protocol.name, f.name, typeName)
 }
 
 // Protocol type metadata
