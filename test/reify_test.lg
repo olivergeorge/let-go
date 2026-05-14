@@ -1,0 +1,236 @@
+;; Tests for reify — anonymous, identity-equal protocol implementations.
+(ns test.reify-test
+  (:require [test :refer :all]))
+
+(defprotocol Greeter
+  (greet [this]))
+
+(defprotocol IAdd
+  (a-add [this n]))
+
+(defprotocol Marker)
+
+(defprotocol Multi
+  (m [this])
+  (m [this x]))
+
+(defprotocol IA
+  (a [this])
+  (b [this]))
+
+(defprotocol Counter
+  (tick [this]))
+
+(defprotocol Variadic
+  (collect [this & xs]))
+
+(defprotocol Destruct
+  (with-map [this kv]))
+
+(defprotocol Recurring
+  (count-down [this n]))
+
+;; AC #1, #2, #5: basic dispatch and satisfies?
+(deftest reify-basic
+  (let [r (reify Greeter (greet [_] "hi"))]
+    (testing "satisfies? for inline protocol"
+      (is (satisfies? Greeter r))
+      (is (not (satisfies? IAdd r))))
+    (testing "method dispatch hits inline impl"
+      (is (= "hi" (greet r))))))
+
+;; AC #5: marker protocol (no methods)
+(deftest reify-marker-protocol
+  (let [r (reify Marker)]
+    (is (satisfies? Marker r))
+    (is (not (satisfies? Greeter r)))))
+
+;; AC #6: partial impl — calling unimplemented method raises a generic error
+(deftest reify-partial-impl
+  (let [r (reify IA (a [_] :ok))]
+    (testing "implemented method works"
+      (is (= :ok (a r))))
+    (testing "unimplemented method raises the generic 'not implemented' error"
+      (let [msg (try (b r) :no-throw (catch e (ex-message e)))]
+        (is (= "method b of protocol IA not implemented for type let-go.lang.Reified"
+               msg))))))
+
+;; AC #7: multi-arity within one protocol head
+(deftest reify-multi-arity
+  (let [r (reify Multi
+            (m [_] :no-arg)
+            (m [_ x] [:with-arg x]))]
+    (is (= :no-arg (m r)))
+    (is (= [:with-arg 99] (m r 99)))))
+
+;; AC #3, #4: multiple protocols and closure capture
+(deftest reify-multi-protocol-and-closure
+  (let [n (atom 0)
+        r (reify
+            Counter (tick [_] (swap! n inc))
+            Greeter (greet [_] (str "n=" @n)))]
+    (testing "satisfies? both"
+      (is (satisfies? Counter r))
+      (is (satisfies? Greeter r)))
+    (testing "closure capture and multi-protocol dispatch"
+      (tick r) (tick r) (tick r)
+      (is (= 3 @n))
+      (is (= "n=3" (greet r))))))
+
+;; AC #8: same method name across two protocols. defprotocol re-binds the
+;; bare method var per protocol, so we capture the per-protocol dispatch fns
+;; into separate vars before redefining the symbol — the value carries both
+;; impls and each protocol fn dispatches to its own.
+(defprotocol PClose (close [this]))
+(def p-close-fn close)
+(def p-close-protocol PClose)
+(defprotocol QClose (close [this]))
+(def q-close-fn close)
+(def q-close-protocol QClose)
+
+(deftest reify-same-method-name-cross-protocol
+  (let [r (reify
+            PClose (close [_] :p-result)
+            QClose (close [_] :q-result))]
+    (is (satisfies? p-close-protocol r))
+    (is (satisfies? q-close-protocol r))
+    (is (= :p-result (p-close-fn r)))
+    (is (= :q-result (q-close-fn r)))))
+
+;; AC #9: variadic method
+(deftest reify-variadic
+  (let [r (reify Variadic (collect [_ & xs] (vec xs)))]
+    (is (= [] (collect r)))
+    (is (= [1] (collect r 1)))
+    (is (= [1 2 3 4 5] (collect r 1 2 3 4 5)))))
+
+;; AC #10: destructuring args
+(deftest reify-destructure-args
+  (let [r (reify Destruct (with-map [_ {:keys [a]}] a))]
+    (is (= 42 (with-map r {:a 42})))))
+
+;; AC #9 (PR doc): form metadata transfer via the reader's ^{} → with-meta
+(deftest reify-form-metadata
+  (let [r ^{:k :v} (reify Greeter (greet [_] "m"))]
+    (is (= {:k :v} (meta r)))
+    (is (= "m" (greet r)))))
+
+;; AC #10 (PR doc) / AC #12: with-meta returns a distinct instance with new meta
+(deftest reify-with-meta-distinct
+  (let [r1 (reify Greeter (greet [_] "x"))
+        r2 (with-meta r1 {:k :v})]
+    (is (nil? (meta r1)))
+    (is (= {:k :v} (meta r2)))
+    (is (not (= r1 r2)))
+    (is (= "x" (greet r1)))
+    (is (= "x" (greet r2)))))
+
+;; AC #11: identity equality
+(deftest reify-identity-equal
+  (let [r (reify Greeter (greet [_] "i"))]
+    (is (= r r))
+    (is (not (= r (reify Greeter (greet [_] "i")))))))
+
+;; AC #12 / #14: recur from method body re-enters the method without
+;; rebinding this. n=5 counts down to 0 returning :done.
+(deftest reify-recur
+  (let [r (reify Recurring
+            (count-down [_ n]
+              (if (zero? n) :done (recur (dec n)))))]
+    (is (= :done (count-down r 5)))
+    (is (= :done (count-down r 100)))))
+
+;; AC #14 (macro-expand rejection): bad forms raise at macroexpand time
+(deftest reify-macroexpand-rejection
+  (testing "method declared before any protocol head"
+    (let [msg (try (macroexpand '(reify (m [_] 1)))
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: method declared before any protocol" msg))))
+  (testing "malformed method form (not a list)"
+    (let [msg (try (macroexpand '(reify Greeter 42))
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: malformed method form" msg))))
+  (testing "method arg list not a vector"
+    (let [msg (try (macroexpand '(reify Greeter (greet "not-a-vec")))
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: method arg list must be a vector" msg)))))
+
+;; AC #15 / #17: make-reified runtime rejection of bad inputs
+(deftest reify-runtime-rejection
+  (testing "non-protocol head — pass a value where the spec map expects a Protocol"
+    (let [msg (try (make-reified {42 {}})
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: 42 is not a protocol" msg))))
+  (testing "unknown method name"
+    (let [msg (try (make-reified {Greeter {'not-a-method (fn [_] 1)}})
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: not-a-method is not a method of protocol Greeter" msg))))
+  (testing "non-fn impl value"
+    (let [msg (try (make-reified {Greeter {'greet 42}})
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: impl for Greeter/greet is not a function" msg)))))
+
+;; AC #16: deterministic String — protocol names sorted
+(deftest reify-string-determinism
+  (let [r (reify
+            Counter (tick [_] 1)
+            IAdd (a-add [_ n] n)
+            Greeter (greet [_] "g"))]
+    ;; Names are sorted alphabetically: Counter, Greeter, IAdd → "#<reified Counter Greeter IAdd>"
+    (is (= "#<reified Counter Greeter IAdd>" (str r)))))
+
+;; Hold an old IA pointer + an old instance across a redefinition.
+(defprotocol IARedef (ar [this]))
+(def old-ia-protocol IARedef)
+(def old-ar-fn ar)
+(def old-instance (reify IARedef (ar [_] :pre)))
+
+(defprotocol IARedef (ar [this]) (br [this]))
+
+;; AC #18: redefinition mints a new IARedef pointer. The old instance still
+;; satisfies the *old* pointer and its captured fn still dispatches; satisfies?
+;; against the redefined pointer returns false (different *Protocol pointer).
+(deftest reify-protocol-redefinition
+  (testing "old instance retains old protocol pointer"
+    (is (satisfies? old-ia-protocol old-instance))
+    (is (= :pre (old-ar-fn old-instance))))
+  (testing "old instance does not satisfy the redefined protocol"
+    (is (not (satisfies? IARedef old-instance))))
+  (testing "new reify against the redefined protocol works"
+    (let [r2 (reify IARedef (ar [_] :post))]
+      (is (satisfies? IARedef r2))
+      (is (= :post (ar r2))))))
+
+;; AC #14 (extended): duplicate protocol head is rejected at macroexpand,
+;; rather than silently collapsing through hash-map and dropping methods.
+(deftest reify-rejects-duplicate-protocol-head
+  (let [msg (try (macroexpand '(reify Greeter (greet [_] :a)
+                                      Greeter (greet [_] :b)))
+                 :no-throw
+                 (catch e (ex-message e)))]
+    (is (= "reify: duplicate protocol head" msg))))
+
+;; AC #14 (extended): malformed arg vectors caught at macroexpand instead of
+;; producing silently wrong fns. `[_ &]` and `[_ & x y]` are the canonical traps.
+(deftest reify-rejects-malformed-arg-vectors
+  (testing "empty arg vector"
+    (let [msg (try (macroexpand '(reify Greeter (greet [] :x)))
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: method arg vector must include a this slot" msg))))
+  (testing "trailing & with no variadic symbol"
+    (let [msg (try (macroexpand '(reify Greeter (greet [_ &] :x)))
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: & must be followed by exactly one variadic symbol" msg))))
+  (testing "extra symbol after variadic"
+    (let [msg (try (macroexpand '(reify Greeter (greet [_ & xs y] :x)))
+                   :no-throw
+                   (catch e (ex-message e)))]
+      (is (= "reify: & must be followed by exactly one variadic symbol" msg)))))

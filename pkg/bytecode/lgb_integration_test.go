@@ -196,6 +196,36 @@ func TestLGBParity(t *testing.T) {
 		(println (greet (->Person "Alice")))
 	`)
 
+	// AOT roundtrip for reify: closure capture, multi-arity, multiple
+	// protocols. The reify macro emits make-reified + plain fns, so the
+	// roundtrip exercises only existing bytecode paths — no new tags needed.
+	assertSourceMatchesLGB(t, "reify", `
+		(defprotocol Counter (tick [this]) (peek-val [this]))
+		(defprotocol Multi (m [this]) (m [this x]))
+		(let [n (atom 0)
+		      r (reify
+		          Counter
+		          (tick [_] (swap! n inc))
+		          (peek-val [_] @n)
+		          Multi
+		          (m [_] :no-arg)
+		          (m [_ x] [:with x]))]
+		  (tick r) (tick r)
+		  (println (peek-val r))
+		  (println (m r))
+		  (println (m r 99)))
+	`)
+
+	// AOT roundtrip for a top-level (def r (reify ...)). Verifies that
+	// (reify ...) at top level compiles as construction-at-load — not as
+	// a serialised *Reified constant in the const pool, which would be a
+	// silent format-stability leak.
+	assertSourceMatchesLGB(t, "reify-top-level-def", `
+		(defprotocol Greet (g [this]))
+		(def r (reify Greet (g [_] "hi-from-top")))
+		(println (g r))
+	`)
+
 	assertSourceMatchesLGB(t, "transducers", `
 		(println (into [] (comp (map inc) (filter even?) (take 3)) (range 20)))
 		(println (transduce (map inc) + 0 [1 2 3 4 5]))

@@ -1698,6 +1698,132 @@
                      groups)]
     (cons 'do extends)))
 
+;; (reify
+;;   Protocol1
+;;   (m1 [this] body)
+;;   (m1 [this x] body)   ;; multi-arity overload — emits a multi-arity fn
+;;   Protocol2
+;;   (m2 [this] body))    ;; marker protocols (no methods) supported: just leave methods off
+;;
+;; Returns an opaque, identity-equal value that satisfies each listed protocol.
+;; Method bodies are lexical closures over the surrounding scope. recur from
+;; a method body re-enters the method without rebinding this.
+;;
+;; Form metadata is preserved via the reader's ^{} → (with-meta ...) rewrite
+;; — no in-macro handling required, since *Reified implements IMeta.
+(defmacro reify [& specs]
+  (let [;; Parse into [protocol-sym, [(method-name [args] body) ...]] groups,
+        ;; preserving heads with no methods (marker protocols). Duplicate
+        ;; protocol heads are rejected — `(reify P (a [_] 1) P (b [_] 2))`
+        ;; would otherwise silently drop the first group through hash-map.
+        parse-groups
+        (fn [specs]
+          (loop [s specs current-proto nil current-methods [] groups [] seen #{}]
+            (if (empty? s)
+              (if (nil? current-proto)
+                groups
+                (conj groups [current-proto current-methods]))
+              (let [item (first s)]
+                (cond
+                  (symbol? item)
+                  (do
+                    (when (contains? seen item)
+                      (throw (ex-info "reify: duplicate protocol head"
+                                      {:protocol item})))
+                    (if (nil? current-proto)
+                      (recur (next s) item [] groups (conj seen item))
+                      (recur (next s) item [] (conj groups [current-proto current-methods])
+                             (conj seen item))))
+
+                  (nil? current-proto)
+                  (throw (ex-info "reify: method declared before any protocol"
+                                  {:method item}))
+
+                  :else
+                  (do
+                    (when-not (and (seq? item) (>= (count item) 2))
+                      (throw (ex-info "reify: malformed method form"
+                                      {:method item})))
+                    (when-not (symbol? (first item))
+                      (throw (ex-info "reify: method name must be a symbol"
+                                      {:method item})))
+                    (when-not (vector? (second item))
+                      (throw (ex-info "reify: method arg list must be a vector"
+                                      {:method item})))
+                    (recur (next s) current-proto
+                           (conj current-methods item) groups seen)))))))
+
+        ;; For one method arity (m [this & rest] body): emit one fn-arity form
+        ;; ([outer-this G1 ...] (let [this outer-this] (loop [a G1 ...] body))).
+        ;; `recur` from body targets the loop; `this` stays bound. Variadic
+        ;; handled via & on the outer fn args and corresponding loop binding.
+        ;;
+        ;; Arg-vector shape is validated here so malformed forms surface at
+        ;; macroexpand time rather than as silently wrong bytecode:
+        ;;   * must start with a `this` slot
+        ;;   * `&` must be followed by exactly one variadic symbol
+        build-arity
+        (fn [arg-vec body]
+          (when (empty? arg-vec)
+            (throw (ex-info "reify: method arg vector must include a this slot"
+                            {:arg-vec arg-vec})))
+          (when-not (symbol? (first arg-vec))
+            (throw (ex-info "reify: this slot must be a symbol"
+                            {:arg-vec arg-vec})))
+          (let [this-sym  (first arg-vec)
+                rest-args (subvec arg-vec 1)
+                fixed     (vec (take-while #(not= '& %) rest-args))
+                after-amp (drop-while #(not= '& %) rest-args)
+                _ (when (and (seq after-amp) (not= 2 (count after-amp)))
+                    (throw (ex-info "reify: & must be followed by exactly one variadic symbol"
+                                    {:arg-vec arg-vec})))
+                variadic-sym (when (seq after-amp) (second after-amp))
+                _ (when (and variadic-sym (not (symbol? variadic-sym)))
+                    (throw (ex-info "reify: variadic binding must be a symbol"
+                                    {:arg-vec arg-vec})))
+                outer-this (gensym "this__")
+                gensyms    (mapv (fn [_] (gensym "arg__")) fixed)
+                rest-gensym (when variadic-sym (gensym "rest__"))
+                fn-args    (if variadic-sym
+                             (conj (conj (into [outer-this] gensyms) '&) rest-gensym)
+                             (into [outer-this] gensyms))
+                loop-bindings (vec
+                                (concat
+                                  (mapcat list fixed gensyms)
+                                  (when variadic-sym [variadic-sym rest-gensym])))]
+            (list fn-args
+                  (list 'let [this-sym outer-this]
+                        (cons 'loop (cons loop-bindings body))))))
+
+        ;; Group method forms by name; emit a fn. Single arity uses the flat
+        ;; (fn [args] body) shape; multi-arity emits (fn ([args] body) ...).
+        ;; Wrapping a lone variadic arity in a list confuses let-go's multi-arity
+        ;; dispatcher, so the flat shape is required for the common case.
+        ;; Duplicate arities are rejected naturally by fn* compilation.
+        build-method-fn
+        (fn [arities]
+          (let [arity-forms (map (fn [m]
+                                   (build-arity (second m) (nnext m)))
+                                 arities)]
+            (if (= 1 (count arity-forms))
+              (cons 'fn (first arity-forms))
+              (cons 'fn arity-forms))))
+
+        groups (parse-groups specs)
+
+        proto-pairs
+        (mapcat (fn [g]
+                  (let [proto-sym (first g)
+                        methods   (second g)
+                        by-name   (group-by first methods)
+                        method-pairs (mapcat (fn [entry]
+                                               [(list 'quote (first entry))
+                                                (build-method-fn (second entry))])
+                                             by-name)]
+                    [proto-sym (apply hash-map method-pairs)]))
+                groups)]
+    (list 'make-reified (apply hash-map proto-pairs))))
+
 ;; --- Tier 1 missing Clojure core functions ---
 
 (defn constantly

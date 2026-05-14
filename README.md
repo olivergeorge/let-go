@@ -77,7 +77,7 @@ namespaces.
 
 | Namespace            | Status                                                                                                                                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `clojure.core`       | macros, destructuring, lazy seqs, transducers, protocols, records, multimethods, atoms, regex, metadata, BigInt                                                                               |
+| `clojure.core`       | macros, destructuring, lazy seqs, transducers, protocols, records, `reify`, multimethods, atoms, regex, metadata, BigInt                                                                      |
 | `clojure.string`     | full                                                                                                                                                                                          |
 | `clojure.set`        | full                                                                                                                                                                                          |
 | `clojure.walk`       | `prewalk`, `postwalk`, `keywordize-keys`, `stringify-keys`, `walk`                                                                                                                            |
@@ -124,7 +124,6 @@ for what's available.
 - **Chunked sequences**: lazy seqs are unchunked
 - **Custom tagged literal readers**: built-in `#uuid` and `#inst` work; `*data-readers*` / `*default-data-reader-fn*` are not implemented
 - **`deftype`** (use `defrecord`)
-- **`reify`** (protocols can only be extended to named types)
 - **Spec** (no `clojure.spec`)
 - **`alter-var-root`**
 - **Numeric overflow detection**: `+`/`-`/`*`/`inc`/`dec` wrap silently on int64 overflow; use `+'`/`-'`/`*'` for BigInt math
