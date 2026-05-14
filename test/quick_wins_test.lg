@@ -230,7 +230,7 @@
     (is (= 127 (byte 127)))
     (is (= -128 (byte -128)))
     (is (= 65 (byte 65.9)))
-    (is (= :caught (try (byte 127.000001) (catch e :caught)))))
+    (is (= :caught (try (byte 127.000001) (catch e :caught))))))
 
 (deftest unchecked-byte-test
   (testing "unchecked-byte wraps on overflow"
@@ -244,7 +244,7 @@
     (is (= 0 (short 0)))
     (is (= 32767 (short 32767)))
     (is (= -32768 (short -32768)))
-    (is (= :caught (try (short 32767.000001) (catch e :caught)))))
+    (is (= :caught (try (short 32767.000001) (catch e :caught))))))
 
 (deftest unchecked-short-test
   (testing "unchecked-short wraps on overflow"
@@ -343,6 +343,57 @@
            (parse-uuid "550E8400-E29B-41D4-A716-446655440000"))))
   (testing "#uuid reader literal produces a UUID"
     (is (uuid? #uuid "550e8400-e29b-41d4-a716-446655440000"))))
+
+;; --- reader tagged literals: #inst, unknown tags ---
+
+(deftest inst-reader-literal-test
+  (testing "#inst reader literal produces an instant value, not a string"
+    (let [v #inst "2024-01-01T00:00:00Z"]
+      (is (inst? v))
+      (is (not (string? v)))))
+  (testing "type of #inst is the let-go.lang.Instant type"
+    (is (= "let-go.lang.Instant" (str (type #inst "2024-01-01T00:00:00Z"))))
+    (is (= (type #inst "2024-01-01T00:00:00Z")
+           (type #inst "1999-12-31T23:59:59Z"))))
+  (testing "two #inst literals for the same moment are equal"
+    (is (= #inst "2024-01-01T00:00:00Z"
+           #inst "2024-01-01T00:00:00Z")))
+  (testing "#inst values from different timezones are equal when they denote the same moment (UTC normalisation)"
+    (is (= #inst "2024-01-01T00:00:00Z"
+           #inst "2023-12-31T19:00:00-05:00")))
+  (testing "#inst round-trips through pr-str / read-string"
+    (let [v #inst "2024-01-01T00:00:00Z"]
+      (is (= v (read-string (pr-str v))))))
+  (testing "#inst sub-millisecond precision is truncated at construction (matches Clojure JVM/cljs Date)"
+    (is (= #inst "2024-01-01T00:00:00.123Z"
+           #inst "2024-01-01T00:00:00.123456789Z")))
+  (testing "#inst hash matches across equal values (suitable as a map key)"
+    (let [a #inst "2024-01-01T00:00:00Z"
+          b #inst "2023-12-31T19:00:00-05:00"
+          m {a :hit}]
+      (is (= :hit (get m b)))))
+  (testing "#inst values sort chronologically"
+    (let [xs [#inst "2024-06-01T00:00:00Z"
+              #inst "2024-01-01T00:00:00Z"
+              #inst "2024-03-15T00:00:00Z"]]
+      (is (= [#inst "2024-01-01T00:00:00Z"
+              #inst "2024-03-15T00:00:00Z"
+              #inst "2024-06-01T00:00:00Z"]
+             (sort xs))))))
+
+(deftest inst-invalid-format-test
+  (testing "invalid RFC3339 string in #inst raises a reader error citing #inst"
+    (let [msg (try (read-string "#inst \"not-a-real-date\"")
+                   (catch e (ex-message e)))]
+      (is (s/includes? msg "invalid #inst literal"))))
+  (testing "non-string payload after #inst raises a reader error"
+    (let [msg (try (read-string "#inst 123") (catch e (ex-message e)))]
+      (is (s/includes? msg "#inst requires a string")))))
+
+(deftest tagged-literal-read-string-test
+  (testing "known tags work via read-string"
+    (is (uuid? (read-string "#uuid \"550e8400-e29b-41d4-a716-446655440000\"")))
+    (is (inst? (read-string "#inst \"2024-01-01T00:00:00Z\"")))))
 
 ;; --- run! ---
 

@@ -262,4 +262,10 @@ func TestLGBParity(t *testing.T) {
 		(prn #uuid "550e8400-e29b-41d4-a716-446655440000")
 		(prn #uuid "00000000-0000-0000-0000-000000000000")
 	`)
+
+	assertSourceMatchesLGB(t, "inst-literal", `
+		(prn #inst "2024-01-01T00:00:00Z")
+		(prn #inst "2023-12-31T19:00:00-05:00")
+		(prn #inst "2024-01-01T00:00:00.123456789Z")
+	`)
 }

@@ -25,6 +25,7 @@ const (
 	TagBigInt    byte = 0x09
 	TagVoid      byte = 0x0A
 	TagUUID      byte = 0x0B
+	TagInstant   byte = 0x0C
 	TagFunc      byte = 0x10
 	TagVarRef    byte = 0x11
 	TagEmptyList byte = 0x20

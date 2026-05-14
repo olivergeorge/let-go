@@ -193,6 +193,8 @@ func (b *ModuleBuilder) internStringsForValue(v vm.Value) {
 		b.internString(val.Pattern())
 	case *vm.UUID:
 		b.internString(val.Unbox().(string))
+	case *vm.Instant:
+		b.internString(val.Val())
 	case *vm.List:
 		var s vm.Seq = val
 		for s != nil && s != vm.EmptyList {
@@ -445,6 +447,11 @@ func (e *encoder) writeValue(v vm.Value) error {
 			return err
 		}
 		return e.writeStringRef(val.Unbox().(string))
+	case *vm.Instant:
+		if err := e.w.WriteByte(TagInstant); err != nil {
+			return err
+		}
+		return e.writeStringRef(val.Val())
 	case *vm.Func:
 		if err := e.w.WriteByte(TagFunc); err != nil {
 			return err
