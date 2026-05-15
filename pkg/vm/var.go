@@ -8,6 +8,7 @@ package vm
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // Var is a thread-safe mutable reference to a root value, plus a dynamic
@@ -24,10 +25,16 @@ import (
 // safely shared across goroutines; locking the slice in place would mask
 // the bug rather than fix it.
 type Var struct {
-	mu        sync.RWMutex
-	root      Value
-	gen       uint64
-	bindings  []Value // see comment above — unsynchronized by design
+	mu          sync.RWMutex
+	root        Value
+	gen         uint64
+	bindings    []Value // legacy global stack — slated for removal once the
+	                    // Execution-scoped binding model (see exec.go and
+	                    // backlog/decisions/decision-1) is fully wired through
+	                    // the bytecode VM. Until then both paths coexist.
+	threadBound atomic.Bool // sticky: flipped true the first time this var is
+	                        // dynamically bound on any Execution. Lets the
+	                        // common deref skip the binding-frame lookup.
 	nsref     *Namespace
 	ns        string
 	name      string
@@ -85,6 +92,38 @@ func (v *Var) Deref() Value {
 		return v.bindings[len(v.bindings)-1]
 	}
 	return v.rootSnapshot()
+}
+
+// DerefIn returns the value of v in the given Execution: the innermost
+// binding-frame value if any, else the root. This is the
+// Execution-scoped reader that the bytecode VM will consult once the
+// Frame.exec wiring lands (currently OP_LOAD_VAR uses Deref instead).
+//
+// Skips the binding-frame walk entirely if no Execution has ever bound
+// this var dynamically (the threadBound fast-path).
+func (v *Var) DerefIn(exec *Execution) Value {
+	if !v.threadBound.Load() {
+		return v.rootSnapshot()
+	}
+	if t := exec.Lookup(v); t != nil {
+		return t.Value()
+	}
+	return v.rootSnapshot()
+}
+
+// SetIn updates the binding for v in the given Execution's nearest
+// frame. Returns an error if v is not bound in this Execution, or if
+// the binding's owner is a different Execution. This is the
+// Execution-scoped set! that the bytecode VM will use once
+// integrated.
+func (v *Var) SetIn(exec *Execution, val Value) error {
+	return exec.SetBound(v, val)
+}
+
+// markThreadBound flips the sticky threadBound flag. Called by
+// Execution.PushBinding when this var first acquires a dynamic binding.
+func (v *Var) markThreadBound() {
+	v.threadBound.Store(true)
 }
 
 // AlterRoot atomically applies fn to the current root and stores the
