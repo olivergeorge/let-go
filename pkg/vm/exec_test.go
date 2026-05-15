@@ -358,3 +358,198 @@ func TestExecution_ThreadBoundFastPath(t *testing.T) {
 		t.Errorf("unbound exec after fast-path flipped: want root (123), got %d", got)
 	}
 }
+
+// Regression lock-in (step-2 review, Hickey/Cox concern): DerefIn must
+// not panic when called with a nil Execution after some OTHER execution
+// has flipped the threadBound flag. Plain Invoke callers (REPL, Unbox
+// proxies, every unmigrated native) pass nil exec; if a parallel
+// goroutine binds the var, the legacy path must still read root safely.
+func TestVar_DerefInNilExecWithThreadBound(t *testing.T) {
+	v := NewVar(nil, "test", "step2-nilexec").SetRoot(MakeInt(7))
+	v.SetDynamic()
+
+	other := NewExecution()
+	_ = other.PushBinding(map[*Var]Value{v: MakeInt(99)})
+	defer other.PopBinding()
+
+	if !v.threadBound.Load() {
+		t.Fatal("setup: expected threadBound flipped")
+	}
+
+	// Must not panic; must return root because nil exec has no bindings.
+	got := v.DerefIn(nil)
+	if i, ok := got.(Int); !ok || int(i) != 7 {
+		t.Errorf("DerefIn(nil) with threadBound true: want root (7), got %v", got)
+	}
+}
+
+// --- Step-2 wiring: Frame.exec propagation through the bytecode VM ---
+//
+// Up to this point the spike's contract tests were Go-level only — they
+// exercised the *Execution / DerefIn / SetIn primitives in isolation. The
+// step-2 tests below prove the same contract holds end-to-end through a
+// real bytecode call: when InvokeWithExec is the entry point, the
+// caller's *Execution flows onto the callee Frame and OP_LOAD_VAR resolves
+// against it.
+
+// makeVarDerefFunc builds a 0-arity *Func whose body is `OP_LOAD_VAR v;
+// OP_RETURN`. Returning the value of v at call time is the simplest body
+// that touches the binding stack through bytecode.
+func makeVarDerefFunc(v *Var) *Func {
+	consts := NewConsts()
+	idx := consts.Intern(v)
+	c := NewCodeChunk(consts)
+	c.SetMaxStack(2)
+	c.Append(OP_LOAD_VAR)
+	c.Append32(idx)
+	c.Append(OP_RETURN)
+	return MakeFunc(0, false, c)
+}
+
+// Step 2 / AC #1 — caller's binding visible inside a Func body via
+// OP_LOAD_VAR. With Frame.exec wired, the callee's frame inherits exec
+// and OP_LOAD_VAR routes through DerefIn(exec). Without the wiring the
+// callee would read the root.
+func TestFrameExec_FuncSeesCallerBinding(t *testing.T) {
+	v := NewVar(nil, "test", "step2-func").SetRoot(MakeInt(0))
+	v.SetDynamic()
+	fn := makeVarDerefFunc(v)
+
+	exec := NewExecution()
+	_ = exec.PushBinding(map[*Var]Value{v: MakeInt(42)})
+	defer exec.PopBinding()
+
+	out, err := fn.InvokeWithExec(exec, nil)
+	if err != nil {
+		t.Fatalf("InvokeWithExec: %v", err)
+	}
+	if got := int(out.(Int)); got != 42 {
+		t.Errorf("callee read root through bytecode — want 42, got %d", got)
+	}
+}
+
+// Same for Closure — same body, wrapped via MakeClosure.
+func TestFrameExec_ClosureSeesCallerBinding(t *testing.T) {
+	v := NewVar(nil, "test", "step2-closure").SetRoot(MakeInt(0))
+	v.SetDynamic()
+	cls := makeVarDerefFunc(v).MakeClosure().(*Closure)
+
+	exec := NewExecution()
+	_ = exec.PushBinding(map[*Var]Value{v: MakeInt(7)})
+	defer exec.PopBinding()
+
+	out, err := cls.InvokeWithExec(exec, nil)
+	if err != nil {
+		t.Fatalf("InvokeWithExec: %v", err)
+	}
+	if got := int(out.(Int)); got != 7 {
+		t.Errorf("closure read root through bytecode — want 7, got %d", got)
+	}
+}
+
+// Step 2 / AC #2 — MultiArityFn dispatches to the body-bearing inner Fn
+// via InvokeFnWithExec, so the inner Func's frame still inherits exec.
+func TestFrameExec_MultiArityFnPropagatesExec(t *testing.T) {
+	v := NewVar(nil, "test", "step2-multi").SetRoot(MakeInt(0))
+	v.SetDynamic()
+
+	zeroArity := makeVarDerefFunc(v)
+	multi, err := makeMultiArity([]Value{zeroArity})
+	if err != nil {
+		t.Fatalf("makeMultiArity: %v", err)
+	}
+
+	exec := NewExecution()
+	_ = exec.PushBinding(map[*Var]Value{v: MakeInt(99)})
+	defer exec.PopBinding()
+
+	out, err := multi.InvokeWithExec(exec, nil)
+	if err != nil {
+		t.Fatalf("multi InvokeWithExec: %v", err)
+	}
+	if got := int(out.(Int)); got != 99 {
+		t.Errorf("multiarity didn't propagate exec — want 99, got %d", got)
+	}
+}
+
+// Step 2 / AC #3 — nested call. Outer Func calls inner Func via
+// OP_INVOKE; inner reads the var. The outer call site is reached via
+// InvokeWithExec; the OP_INVOKE inside it must route through
+// InvokeFnWithExec so the inner inherits exec too.
+func TestFrameExec_NestedCallInheritsExec(t *testing.T) {
+	v := NewVar(nil, "test", "step2-nested").SetRoot(MakeInt(0))
+	v.SetDynamic()
+
+	inner := makeVarDerefFunc(v)
+
+	// outer: (inner) — push inner as const, OP_INVOKE 0, OP_RETURN.
+	outerConsts := NewConsts()
+	innerIdx := outerConsts.Intern(inner)
+	c := NewCodeChunk(outerConsts)
+	c.SetMaxStack(4)
+	c.Append(OP_LOAD_CONST)
+	c.Append32(innerIdx)
+	c.Append(OP_INVOKE)
+	c.Append32(0)
+	c.Append(OP_RETURN)
+	outer := MakeFunc(0, false, c)
+
+	exec := NewExecution()
+	_ = exec.PushBinding(map[*Var]Value{v: MakeInt(1234)})
+	defer exec.PopBinding()
+
+	out, err := outer.InvokeWithExec(exec, nil)
+	if err != nil {
+		t.Fatalf("outer InvokeWithExec: %v", err)
+	}
+	if got := int(out.(Int)); got != 1234 {
+		t.Errorf("nested call lost exec — want 1234, got %d", got)
+	}
+}
+
+// Step 2 / AC #4 — conveyance through Func invocation. Parent forks a
+// child Execution; the child invokes a Func that reads v; the value the
+// parent bound is visible. This is the building block that go/future
+// spawn sites will use.
+func TestFrameExec_ConveyanceThroughFunc(t *testing.T) {
+	v := NewVar(nil, "test", "step2-conveyance").SetRoot(MakeInt(0))
+	v.SetDynamic()
+	fn := makeVarDerefFunc(v)
+
+	parent := NewExecution()
+	_ = parent.PushBinding(map[*Var]Value{v: MakeInt(555)})
+	defer parent.PopBinding()
+
+	child := parent.Fork()
+	out, err := fn.InvokeWithExec(child, nil)
+	if err != nil {
+		t.Fatalf("InvokeWithExec on child: %v", err)
+	}
+	if got := int(out.(Int)); got != 555 {
+		t.Errorf("conveyance through Func — want 555, got %d", got)
+	}
+}
+
+// Step 2 / regression — invoking via plain Invoke (no exec) still works
+// and reads the root. This is the backward-compat invariant: every
+// call site that hasn't been migrated yet (rt natives, REPL entry,
+// Unbox proxies) continues to function.
+func TestFrameExec_PlainInvokeReadsRoot(t *testing.T) {
+	v := NewVar(nil, "test", "step2-plain").SetRoot(MakeInt(11))
+	v.SetDynamic()
+	fn := makeVarDerefFunc(v)
+
+	// Even if some other Execution has bound v, plain Invoke sees the
+	// root — because no exec is threaded through.
+	other := NewExecution()
+	_ = other.PushBinding(map[*Var]Value{v: MakeInt(22)})
+	defer other.PopBinding()
+
+	out, err := fn.Invoke(nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := int(out.(Int)); got != 11 {
+		t.Errorf("plain Invoke should read root (sibling-invisible) — want 11, got %d", got)
+	}
+}

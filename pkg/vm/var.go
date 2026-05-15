@@ -96,17 +96,31 @@ func (v *Var) Deref() Value {
 
 // DerefIn returns the value of v in the given Execution: the innermost
 // binding-frame value if any, else the root. This is the
-// Execution-scoped reader that the bytecode VM will consult once the
-// Frame.exec wiring lands (currently OP_LOAD_VAR uses Deref instead).
+// Execution-scoped reader that OP_LOAD_VAR consults.
 //
-// Skips the binding-frame walk entirely if no Execution has ever bound
-// this var dynamically (the threadBound fast-path).
+// Skips the Execution binding-frame walk entirely if no Execution has
+// ever bound this var dynamically (the threadBound fast-path).
+//
+// Transition-period fallback: until push-binding! / pop-binding! and the
+// binding macro migrate to Execution (step 3 of TASK-8), legacy
+// dynamic bindings live in Var.bindings. When DerefIn finds no
+// Execution binding, it consults Var.bindings before returning root, so
+// existing code paths that go through the legacy `binding` macro keep
+// working through the migration. Execution bindings always win when
+// both are present.
 func (v *Var) DerefIn(exec *Execution) Value {
-	if !v.threadBound.Load() {
-		return v.rootSnapshot()
+	// Guard on exec != nil first: Execution.Lookup tolerates a nil
+	// receiver, but the explicit guard makes the contract obvious at
+	// the read site and skips the atomic.Load on the hot path for
+	// every call frame that has no Execution attached (REPL bootstrap,
+	// Unbox proxies, every plain Invoke caller that hasn't migrated).
+	if exec != nil && v.threadBound.Load() {
+		if t := exec.Lookup(v); t != nil {
+			return t.Value()
+		}
 	}
-	if t := exec.Lookup(v); t != nil {
-		return t.Value()
+	if len(v.bindings) > 0 {
+		return v.bindings[len(v.bindings)-1]
 	}
 	return v.rootSnapshot()
 }

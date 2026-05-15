@@ -70,6 +70,14 @@ func (l *Func) Arity() int {
 }
 
 func (l *Func) Invoke(pargs []Value) (result Value, err error) {
+	return l.InvokeWithExec(nil, pargs)
+}
+
+// InvokeWithExec is the Execution-scoped invocation entry point. The given
+// *Execution flows onto the new Frame so OP_LOAD_VAR / OP_INVOKE inside
+// the body observe the caller's binding context. A nil exec is allowed —
+// DerefIn handles it by reading the root.
+func (l *Func) InvokeWithExec(exec *Execution, pargs []Value) (result Value, err error) {
 	args := pargs
 	if l.isVariadric {
 		if len(args) < l.arity-1 {
@@ -86,6 +94,7 @@ func (l *Func) Invoke(pargs []Value) (result Value, err error) {
 		return NIL, NewExecutionError(fmt.Sprintf("function %s expected %d args, got %d", l, l.arity, len(args)))
 	}
 	f := NewFrame(l.chunk, args)
+	f.exec = exec
 	result, err = f.Run()
 	ReleaseFrame(f)
 	return result, err
@@ -146,6 +155,12 @@ func (l *Closure) Arity() int {
 }
 
 func (l *Closure) Invoke(pargs []Value) (result Value, err error) {
+	return l.InvokeWithExec(nil, pargs)
+}
+
+// InvokeWithExec mirrors Func.InvokeWithExec — propagates the caller's
+// Execution onto the closure's new Frame.
+func (l *Closure) InvokeWithExec(exec *Execution, pargs []Value) (result Value, err error) {
 	args := pargs
 	if l.fn.isVariadric {
 		if len(args) < l.fn.arity-1 {
@@ -163,6 +178,7 @@ func (l *Closure) Invoke(pargs []Value) (result Value, err error) {
 	}
 	f := NewFrame(l.fn.chunk, args)
 	f.closedOvers = l.closedOvers
+	f.exec = exec
 	result, err = f.Run()
 	ReleaseFrame(f)
 	return result, err
@@ -204,12 +220,20 @@ func (l *MultiArityFn) Arity() int {
 }
 
 func (l *MultiArityFn) Invoke(pargs []Value) (Value, error) {
+	return l.InvokeWithExec(nil, pargs)
+}
+
+// InvokeWithExec dispatches on arity then propagates exec to the chosen
+// inner Fn via InvokeFnWithExec — Func / Closure variants will pick the
+// exec up; plain Fn variants (rare for body-bearing arities, but possible
+// for NativeFn-backed forms) fall through to the backward-compat shim.
+func (l *MultiArityFn) InvokeWithExec(exec *Execution, pargs []Value) (Value, error) {
 	le := len(pargs)
 	if f, ok := l.fns[le]; ok {
-		return f.Invoke(pargs)
+		return InvokeFnWithExec(exec, f, pargs)
 	}
 	if l.rest != nil && le >= l.rest.Arity() {
-		return l.rest.Invoke(pargs)
+		return InvokeFnWithExec(exec, l.rest, pargs)
 	}
 	return NIL, NewExecutionError(fmt.Sprintf("function %s doesn't have a %d-arity variant", l, le))
 }

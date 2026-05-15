@@ -256,6 +256,12 @@ type Frame struct {
 	sp          int
 	debug       bool
 	handlers    []exHandler // exception handler stack (nil when unused)
+	exec        *Execution  // Execution-scoped binding context for this call.
+	                        // Threaded through OP_INVOKE / OP_TAIL_CALL via
+	                        // InvokeFnWithExec so callee Func/Closure frames
+	                        // inherit the caller's binding stack. nil means
+	                        // "no Execution attached" — DerefIn handles that
+	                        // by falling through to the root.
 }
 
 // framePool reuses Frame structs to avoid per-call heap allocation.
@@ -286,6 +292,7 @@ func NewFrame(code *CodeChunk, args []Value) *Frame {
 	f.ip = 0
 	f.sp = 0
 	f.debug = false
+	f.exec = nil
 	if f.handlers != nil {
 		f.handlers = f.handlers[:0]
 	}
@@ -301,6 +308,7 @@ func ReleaseFrame(f *Frame) {
 	f.consts = nil
 	f.code = nil
 	f.handlers = nil
+	f.exec = nil
 	framePool.Put(f)
 }
 
@@ -493,7 +501,7 @@ func (f *Frame) Run() (Value, error) {
 				if err != nil {
 					return NIL, NewExecutionError("popping arguments failed").Wrap(err)
 				}
-				out, err = fn.Invoke(a)
+				out, err = InvokeFnWithExec(f.exec, fn, a)
 				if err != nil {
 					srcInfo := f.code.LookupSource(f.ip)
 					wrapped := NewExecutionError(fmt.Sprintf("calling %s", fnName(fn))).WithSource(srcInfo).Wrap(err)
@@ -520,7 +528,7 @@ func (f *Frame) Run() (Value, error) {
 				if !ok {
 					return NIL, NewTypeError(fraw, "is not a function", nil)
 				}
-				out, err = fn.Invoke(nil)
+				out, err = InvokeFnWithExec(f.exec, fn, nil)
 				if err != nil {
 					srcInfo := f.code.LookupSource(f.ip)
 					wrapped := NewExecutionError(fmt.Sprintf("calling %s", fnName(fn))).WithSource(srcInfo).Wrap(err)
@@ -558,7 +566,7 @@ func (f *Frame) Run() (Value, error) {
 					return NIL, NewExecutionError("popping arguments failed").Wrap(err)
 				}
 				if ff, ok := fn.(*Func); !ok {
-					out, err = fn.Invoke(a)
+					out, err = InvokeFnWithExec(f.exec, fn, a)
 					if err != nil {
 						srcInfo := f.code.LookupSource(f.ip)
 						wrapped := NewExecutionError(fmt.Sprintf("calling %s", fnName(fn))).WithSource(srcInfo).Wrap(err)
@@ -618,7 +626,7 @@ func (f *Frame) Run() (Value, error) {
 					return NIL, NewTypeError(fraw, "is not a function", nil)
 				}
 				if ff, ok := fn.(*Func); !ok {
-					out, err = fn.Invoke(nil)
+					out, err = InvokeFnWithExec(f.exec, fn, nil)
 					if err != nil {
 						srcInfo := f.code.LookupSource(f.ip)
 						wrapped := NewExecutionError(fmt.Sprintf("calling %s", fnName(fn))).WithSource(srcInfo).Wrap(err)
@@ -740,7 +748,7 @@ func (f *Frame) Run() (Value, error) {
 			if int(idx) >= f.constsc {
 				return NIL, NewExecutionError("const lookup out of bounds")
 			}
-			err := f.push(f.consts.get(int(idx)).(*Var).Deref())
+			err := f.push(f.consts.get(int(idx)).(*Var).DerefIn(f.exec))
 			if err != nil {
 				return NIL, NewExecutionError("const push failed").Wrap(err)
 			}
