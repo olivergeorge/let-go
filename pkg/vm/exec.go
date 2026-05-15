@@ -207,19 +207,57 @@ func (t *TBox) Value() Value {
 	return v
 }
 
+// ExecAwareFn is implemented by Fn types whose body re-enters the VM
+// (or otherwise needs access to the caller's binding stack). Bytecode
+// dispatch — and spawn sites that have just forked a child Execution —
+// invoke Fns via InvokeFnWithExec; types that implement ExecAwareFn
+// receive the exec, others fall through to plain Invoke.
+//
+// Today the only meaningful implementers are the function-bodied types
+// (Func, Closure, MultiArityFn, MultiFn, ProtocolFn) and natives whose
+// behaviour depends on the current binding stack (push-binding!,
+// pop-binding!, eventually bound-fn*). The Fn types that are merely
+// callable conveniences — vectors, maps, sets, keywords, records,
+// transients, vars-as-fn, typed arrays — never need exec because their
+// Invoke does not re-enter the VM. They stay as plain Fn.
+//
+// The "backward-compat shim" called out in the design (decision-1) is
+// the InvokeFnWithExec fallback below: callers can adopt the
+// exec-threading call site immediately, and individual Fn types opt in
+// to ExecAwareFn one at a time as their bodies start consulting the
+// Execution.
+type ExecAwareFn interface {
+	Fn
+	InvokeWithExec(*Execution, []Value) (Value, error)
+}
+
+// InvokeFnWithExec is the canonical call-site for invoking an Fn under
+// a known Execution. Types that implement ExecAwareFn receive the exec;
+// others fall through to fn.Invoke (the backward-compat shim).
+//
+// Bytecode dispatch will route every OP_INVOKE through this helper once
+// Frame.exec lands. Spawn sites (go / future / pmap) call it after
+// forking a child Execution from the parent's snapshot.
+func InvokeFnWithExec(e *Execution, fn Fn, args []Value) (Value, error) {
+	if ef, ok := fn.(ExecAwareFn); ok {
+		return ef.InvokeWithExec(e, args)
+	}
+	return fn.Invoke(args)
+}
+
 // ConveyedFn pairs a captured binding snapshot with an Fn, ready for a
 // spawn site to install on the child goroutine before invoking the body.
-// Once the bytecode VM is wired with Frame.exec and Fn.InvokeWithExec,
-// spawn sites (go / future / pmap / agent dispatch in pkg/rt/lang.go
-// and pkg/rt/async.go) will:
+// Once the bytecode VM is wired with Frame.exec, spawn sites
+// (go / future / pmap / agent dispatch in pkg/rt/lang.go and
+// pkg/rt/async.go) will:
 //
 //	conveyed := BindingConveyorFn(currentExec, fn)
-//	go conveyed.Inner.InvokeWithExec(conveyed.ChildExec(), args)
+//	go InvokeFnWithExec(conveyed.ChildExec(), conveyed.Inner, args)
 //
-// Until InvokeWithExec exists, ConveyedFn deliberately does NOT
-// implement the Fn interface — there is no useful Invoke we can offer
-// without losing the child Execution. The struct exists to fix the
-// shape so the wiring follow-up is mechanical.
+// ConveyedFn deliberately does NOT implement the Fn interface — there
+// is no useful Invoke we can offer without losing the child Execution.
+// The struct exists to fix the shape so the wiring follow-up is
+// mechanical.
 type ConveyedFn struct {
 	snapshot *BindingFrame
 	Inner    Fn

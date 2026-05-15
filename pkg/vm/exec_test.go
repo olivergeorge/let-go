@@ -245,6 +245,87 @@ func TestExecution_ConcurrentSetIsolation(t *testing.T) {
 	wg.Wait()
 }
 
+// testExecAwareFn is a minimal Fn-implementer that also satisfies
+// ExecAwareFn — for testing InvokeFnWithExec dispatch.
+type testExecAwareFn struct {
+	gotExec *Execution
+	gotArgs []Value
+	via     string // "Invoke" or "InvokeWithExec"
+}
+
+func (f *testExecAwareFn) Type() ValueType    { return FuncType }
+func (f *testExecAwareFn) Unbox() interface{} { return f }
+func (f *testExecAwareFn) String() string     { return "<test-exec-aware-fn>" }
+func (f *testExecAwareFn) Arity() int         { return -1 }
+func (f *testExecAwareFn) Invoke(args []Value) (Value, error) {
+	f.via = "Invoke"
+	f.gotArgs = args
+	return NIL, nil
+}
+func (f *testExecAwareFn) InvokeWithExec(e *Execution, args []Value) (Value, error) {
+	f.via = "InvokeWithExec"
+	f.gotExec = e
+	f.gotArgs = args
+	return NIL, nil
+}
+
+// InvokeFnWithExec routes ExecAwareFn implementers through
+// InvokeWithExec (so the callee receives the caller's Execution).
+func TestInvokeFnWithExec_DispatchesToExecAwareFn(t *testing.T) {
+	fn := &testExecAwareFn{}
+	exec := NewExecution()
+	args := []Value{MakeInt(1), MakeInt(2)}
+
+	if _, err := InvokeFnWithExec(exec, fn, args); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if fn.via != "InvokeWithExec" {
+		t.Errorf("dispatch routed via %q, want InvokeWithExec", fn.via)
+	}
+	if fn.gotExec != exec {
+		t.Errorf("ExecAwareFn did not receive caller's exec: got %p, want %p", fn.gotExec, exec)
+	}
+	if len(fn.gotArgs) != 2 {
+		t.Errorf("args not threaded: got %v", fn.gotArgs)
+	}
+}
+
+// InvokeFnWithExec falls back to plain Invoke for any Fn that does not
+// implement ExecAwareFn — this is the backward-compat shim. Most Fn
+// implementers (keywords, vectors, maps, sets, records, transients,
+// vars-as-fn, typed arrays) will stay as plain Fn because their bodies
+// never re-enter the VM and never need an Execution.
+func TestInvokeFnWithExec_FallsBackToInvoke(t *testing.T) {
+	// Keyword is a plain Fn — Invoke is "look me up in the map arg".
+	kw := Keyword("x")
+	m, _ := MapType.Box(map[Value]Value{Keyword("x"): MakeInt(42)})
+
+	got, err := InvokeFnWithExec(NewExecution(), kw, []Value{m})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v, ok := got.(Int); !ok || int(v) != 42 {
+		t.Errorf("fallback dispatch lost result: got %v (%T), want 42", got, got)
+	}
+}
+
+// nil Execution must round-trip cleanly — early call sites in the
+// bytecode VM may not yet have an exec to pass, and the helper must
+// not panic. The aware implementer is permitted to see nil.
+func TestInvokeFnWithExec_NilExec(t *testing.T) {
+	fn := &testExecAwareFn{}
+	if _, err := InvokeFnWithExec(nil, fn, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fn.via != "InvokeWithExec" {
+		t.Errorf("nil-exec dispatch routed via %q, want InvokeWithExec", fn.via)
+	}
+	if fn.gotExec != nil {
+		t.Errorf("nil exec should propagate as nil, got %p", fn.gotExec)
+	}
+}
+
 // Sanity — the threadBound fast-path: if no Execution has ever bound
 // this var, DerefIn skips the binding-frame lookup entirely.
 func TestExecution_ThreadBoundFastPath(t *testing.T) {
