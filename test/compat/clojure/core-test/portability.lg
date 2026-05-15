@@ -89,15 +89,8 @@
 (def CEILING :ceiling)
 (def FLOOR :floor)
 (def UNNECESSARY :unnecessary)
-;; Hierarchy: minimal stubs. Most hierarchy tests also need derive+ancestors
-;; to produce real results; these just keep the compiler happy.
-(def make-hierarchy (fn [] {:parents {} :ancestors {} :descendants {}}))
-(def derive (fn [& _] (make-hierarchy)))
-(def underive (fn [& _] (make-hierarchy)))
-(def descendants (fn [& _] #{}))
-(def ancestors (fn [& _] #{}))
-(def parents (fn [& _] nil))
-(def isa? (fn [& args] (apply = (if (= (count args) 3) (rest args) args))))
+;; Hierarchies: make-hierarchy, derive, underive, parents, ancestors,
+;; descendants, isa? are implemented natively in let-go core.
 (def clojure.lang.IPending (type (promise)))    ; let-go IPending ≡ Promise
 ;; Object shim: we don't have Java classes, but (instance? Object x) is used —
 ;; define as a ValueType placeholder that matches nothing.

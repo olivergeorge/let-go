@@ -1,0 +1,321 @@
+;; Hierarchy tests: make-hierarchy, derive, underive, parents, ancestors, descendants
+(ns test.hierarchies-test
+  (:require [test :refer :all]))
+
+;; --- make-hierarchy (AC #1) ---
+
+(deftest make-hierarchy-shape
+  (testing "returns canonical empty hierarchy"
+    (let [h (make-hierarchy)]
+      (is (= {} (:parents h)))
+      (is (= {} (:ancestors h)))
+      (is (= {} (:descendants h)))))
+  (testing "each call returns a fresh map"
+    (is (= (make-hierarchy) (make-hierarchy)))))
+
+;; --- derive 3-arity (AC #2, #4, #7) ---
+
+(deftest derive-3arg-linear
+  (testing "single edge, namespaced"
+    (let [h (derive (make-hierarchy) ::rect ::shape)]
+      (is (= #{::shape} (get-in h [:parents ::rect])))
+      (is (= #{::shape} (get-in h [:ancestors ::rect])))
+      (is (= #{::rect} (get-in h [:descendants ::shape])))))
+  (testing "single edge, non-namespaced — 3-arg form is lenient"
+    (let [h (derive (make-hierarchy) :rect :shape)]
+      (is (= #{:shape} (get-in h [:parents :rect])))
+      (is (= #{:shape} (get-in h [:ancestors :rect])))
+      (is (= #{:rect} (get-in h [:descendants :shape])))))
+  (testing "single edge, mixed namespacing (tag namespaced, parent not) — also accepted"
+    (let [h (derive (make-hierarchy) ::rect :shape)]
+      (is (= #{:shape} (get-in h [:parents ::rect])))
+      (is (= #{::rect} (get-in h [:descendants :shape])))))
+  (testing "single edge, symbols"
+    (let [h (derive (make-hierarchy) 'n/a 'n/b)]
+      (is (= #{'n/b} (get-in h [:parents 'n/a]))))))
+
+(deftest derive-3arg-transitive
+  (testing "transitive ancestor and descendant closures (chain ::a → ::b → ::c)"
+    (let [h (-> (make-hierarchy)
+                (derive ::a ::b)
+                (derive ::b ::c))]
+      (is (= #{::b}     (get-in h [:parents ::a])))
+      (is (= #{::c}     (get-in h [:parents ::b])))
+      (is (= #{::b ::c} (get-in h [:ancestors ::a])))
+      (is (= #{::c}     (get-in h [:ancestors ::b])))
+      (is (= #{::a}     (get-in h [:descendants ::b])))
+      (is (= #{::a ::b} (get-in h [:descendants ::c]))))))
+
+(deftest derive-3arg-diamond
+  (testing "diamond shape: ::leaf → {::b ::c} → ::a"
+    (let [h (-> (make-hierarchy)
+                (derive ::b ::a)
+                (derive ::c ::a)
+                (derive ::d ::b)
+                (derive ::d ::c)
+                (derive ::leaf ::d))]
+      (is (= #{::d}                 (get-in h [:parents ::leaf])))
+      (is (= #{::b ::c}             (get-in h [:parents ::d])))
+      (is (= #{::a ::b ::c ::d}     (get-in h [:ancestors ::leaf])))
+      (is (= #{::a ::b ::c}         (get-in h [:ancestors ::d])))
+      (is (= #{::d ::leaf}          (get-in h [:descendants ::b])))
+      (is (= #{::b ::c ::d ::leaf}  (get-in h [:descendants ::a]))))))
+
+(deftest derive-3arg-multiple-parents
+  (testing "::t has two parents ::p-1 and ::p-2"
+    (let [h (-> (make-hierarchy)
+                (derive ::t ::p-1)
+                (derive ::t ::p-2))]
+      (is (= #{::p-1 ::p-2} (get-in h [:parents ::t])))
+      (is (= #{::p-1 ::p-2} (get-in h [:ancestors ::t])))
+      (is (= #{::t}         (get-in h [:descendants ::p-1])))
+      (is (= #{::t}         (get-in h [:descendants ::p-2]))))))
+
+(deftest derive-3arg-idempotent
+  (testing "deriving an existing edge returns h unchanged"
+    (let [h1 (derive (make-hierarchy) ::a ::b)
+          h2 (derive h1 ::a ::b)]
+      (is (= h1 h2)))))
+
+;; --- derive validation (AC #5) ---
+
+(deftest derive-3arg-self-cycle
+  (testing "deriving a tag from itself throws"
+    (is (= :caught (try (derive (make-hierarchy) ::a ::a) (catch e :caught))))))
+
+(deftest derive-3arg-transitive-cycle
+  (testing "deriving a cycle through existing ancestor throws"
+    (let [h (-> (make-hierarchy) (derive ::a ::b) (derive ::b ::c))]
+      (is (= :caught (try (derive h ::c ::a) (catch e :caught)))))))
+
+(deftest derive-3arg-redundant-ancestor
+  (testing "deriving an edge that's already a transitive ancestor throws"
+    (let [h (-> (make-hierarchy) (derive ::a ::b) (derive ::b ::c))]
+      (is (= :caught (try (derive h ::a ::c) (catch e :caught)))))))
+
+(deftest derive-3arg-bad-hierarchy
+  (testing "throws on malformed hierarchy"
+    (is (= :caught (try (derive nil ::a ::b) (catch e :caught))))
+    (is (= :caught (try (derive {} ::a ::b) (catch e :caught))))
+    (is (= :caught (try (derive {:parents {} :descendants {}} ::a ::b) (catch e :caught))))
+    (is (= :caught (try (derive {:parents nil :descendants {} :ancestors {}} ::a ::b) (catch e :caught))))
+    (is (= :caught (try (derive 42 ::a ::b) (catch e :caught))))
+    (is (= :caught (try (derive ::z ::a ::b) (catch e :caught))))
+    (is (= :caught (try (derive true ::a ::b) (catch e :caught))))))
+
+(deftest derive-3arg-non-ident
+  (testing "throws when tag or parent is not a keyword or symbol"
+    (is (= :caught (try (derive (make-hierarchy) 42 ::b) (catch e :caught))))
+    (is (= :caught (try (derive (make-hierarchy) ::a "parent") (catch e :caught))))
+    (is (= :caught (try (derive (make-hierarchy) ::a 42) (catch e :caught))))))
+
+(deftest derive-2arg-namespace-required
+  (testing "2-arg form requires namespace on both tag and parent"
+    (is (= :caught (try (derive ::a :no-ns) (catch e :caught))))
+    (is (= :caught (try (derive :no-ns ::b) (catch e :caught))))
+    (is (= :caught (try (derive ::a nil) (catch e :caught))))
+    (is (= :caught (try (derive nil ::b) (catch e :caught))))))
+
+;; --- derive 2-arity (AC #6, global hierarchy) ---
+
+(deftest derive-2arg-global
+  (testing "2-arg derive mutates global hierarchy and returns nil"
+    ;; uses a namespace unique to this deftest so cleanup leaks can't
+    ;; cross-contaminate `underive-2arg-global-roundtrip` below
+    (is (nil? (derive :global.test.1/x :global.test.1/y)))
+    (is (= #{:global.test.1/y} (parents :global.test.1/x)))
+    (underive :global.test.1/x :global.test.1/y)
+    (is (nil? (parents :global.test.1/x)))))
+
+;; --- underive 3-arity (AC #3, #4, #7) ---
+
+(deftest underive-3arg-removes-edge
+  (testing "removing a single edge"
+    (let [h  (-> (make-hierarchy) (derive ::a ::b))
+          h2 (underive h ::a ::b)]
+      (is (nil? (parents h2 ::a)))
+      (is (nil? (ancestors h2 ::a)))
+      (is (nil? (descendants h2 ::b)))
+      ;; lock-down: dissoc cleans dead keys; no residual empty sets
+      (is (= {} (:parents h2)))
+      (is (= {} (:ancestors h2)))
+      (is (= {} (:descendants h2))))))
+
+(deftest underive-3arg-chain-severs-transitive
+  (testing "underiving in a chain removes downstream transitive ancestors"
+    (let [h  (-> (make-hierarchy) (derive ::a ::b) (derive ::b ::c))
+          h2 (underive h ::b ::c)]
+      (is (= #{::b} (ancestors h2 ::a)))
+      (is (nil? (ancestors h2 ::b)))
+      (is (nil? (descendants h2 ::c))))))
+
+(deftest underive-3arg-diamond-preserves-transitive
+  (testing "removing one edge in a diamond preserves transitive ancestors via the other path"
+    ;; diamond: ::a ← ::b, ::a ← ::c, ::b ← ::d, ::c ← ::d
+    (let [diamond (-> (make-hierarchy)
+                      (derive ::b ::a)
+                      (derive ::c ::a)
+                      (derive ::d ::b)
+                      (derive ::d ::c))
+          ;; remove ::d → ::b; ::d still inherits ::a via ::c
+          h (underive diamond ::d ::b)]
+      (is (= #{::c}     (get-in h [:parents ::d])))
+      (is (= #{::a ::c} (get-in h [:ancestors ::d])))
+      (is (= #{::a}     (get-in h [:ancestors ::c])))
+      (is (= #{::b ::c ::d} (get-in h [:descendants ::a]))))))
+
+(deftest underive-3arg-non-edge-no-op
+  (testing "underiving a non-existent edge returns h unchanged"
+    (let [h (-> (make-hierarchy) (derive ::a ::b))]
+      (is (= h (underive h ::a ::c)))
+      (is (= h (underive h ::x ::y))))))
+
+(deftest underive-3arg-bad-hierarchy
+  (testing "throws on malformed hierarchy"
+    (is (= :caught (try (underive nil ::a ::b) (catch e :caught))))
+    (is (= :caught (try (underive {} ::a ::b) (catch e :caught))))
+    (is (= :caught (try (underive 42 ::a ::b) (catch e :caught))))))
+
+;; --- underive 2-arity (AC #6, lenient) ---
+
+(deftest underive-2arg-lenient-on-garbage
+  (testing "2-arg underive on garbage returns nil, no throw"
+    (is (nil? (underive nil nil)))
+    (is (nil? (underive :a :a)))
+    (is (nil? (underive 42 3.14)))
+    (is (nil? (underive true false)))))
+
+(deftest underive-2arg-global-roundtrip
+  (testing "derive + underive on global is a clean roundtrip; all three lookup 1-arities"
+    ;; unique namespace per [[derive-2arg-global]] note above
+    (derive :global.test.2/x :global.test.2/y)
+    (is (= #{:global.test.2/y} (parents :global.test.2/x)))
+    (is (= #{:global.test.2/y} (ancestors :global.test.2/x)))
+    (is (= #{:global.test.2/x} (descendants :global.test.2/y)))
+    (is (nil? (underive :global.test.2/x :global.test.2/y)))
+    (is (nil? (parents :global.test.2/x)))
+    (is (nil? (ancestors :global.test.2/x)))
+    (is (nil? (descendants :global.test.2/y)))))
+
+;; --- parents / ancestors / descendants lookups (AC #4) ---
+
+(deftest lookups-empty-result-is-nil
+  (testing "lookups on missing tag return nil, not empty set"
+    (let [h (make-hierarchy)]
+      (is (nil? (parents h ::missing)))
+      (is (nil? (ancestors h ::missing)))
+      (is (nil? (descendants h ::missing))))))
+
+(deftest lookups-garbage-input-no-throw
+  (testing "lookups never throw on garbage input"
+    (is (nil? (parents nil)))
+    (is (nil? (parents 42)))
+    (is (nil? (parents "anything")))
+    (is (nil? (parents [])))
+    (is (nil? (parents {})))
+    (is (nil? (ancestors nil)))
+    (is (nil? (descendants nil)))
+    (is (nil? (ancestors nil ::x)))
+    (is (nil? (descendants 42 "anything")))
+    (is (nil? (parents nil ::x)))
+    (is (nil? (parents 42 ::x)))))
+
+(deftest lookups-from-deep-chain
+  (testing "lookups return correct sets in a chain of depth 4"
+    ;; chain: ::a ← ::b ← ::c ← ::d ← ::e (each tag's parent is the next)
+    (let [h (-> (make-hierarchy)
+                (derive ::a ::b)
+                (derive ::b ::c)
+                (derive ::c ::d)
+                (derive ::d ::e))]
+      (is (= #{::b}                 (parents h ::a)))
+      (is (= #{::b ::c ::d ::e}     (ancestors h ::a)))
+      (is (= #{::a ::b ::c ::d}     (descendants h ::e)))
+      (is (= #{::c ::d ::e}         (ancestors h ::b)))
+      (is (= #{::a}                 (descendants h ::b))))))
+
+;; --- isa? ---
+
+(deftest isa-identity
+  (testing "identity: any value isa? itself, even outside the hierarchy"
+    (is (isa? (make-hierarchy) :anything :anything))
+    (is (isa? (make-hierarchy) 42 42))
+    (is (isa? (make-hierarchy) "s" "s"))
+    (is (isa? (make-hierarchy) nil nil))
+    (is (isa? :ungrounded :ungrounded))))
+
+(deftest isa-direct
+  (testing "direct parent edge"
+    (let [h (derive (make-hierarchy) ::rect ::shape)]
+      (is (isa? h ::rect ::shape))
+      (is (not (isa? h ::shape ::rect))))))
+
+(deftest isa-transitive
+  (testing "transitive ancestor: chain ::a → ::b → ::c"
+    (let [h (-> (make-hierarchy) (derive ::a ::b) (derive ::b ::c))]
+      (is (isa? h ::a ::b))
+      (is (isa? h ::b ::c))
+      (is (isa? h ::a ::c))
+      (is (not (isa? h ::c ::a))))))
+
+(deftest isa-diamond
+  (testing "diamond: both paths from ::leaf reach ::a"
+    (let [h (-> (make-hierarchy)
+                (derive ::b ::a)
+                (derive ::c ::a)
+                (derive ::d ::b)
+                (derive ::d ::c)
+                (derive ::leaf ::d))]
+      (is (isa? h ::leaf ::a))
+      (is (isa? h ::leaf ::b))
+      (is (isa? h ::leaf ::c))
+      (is (isa? h ::leaf ::d))
+      (is (not (isa? h ::a ::leaf))))))
+
+(deftest isa-unrelated
+  (testing "unrelated tags are not isa?"
+    (let [h (-> (make-hierarchy) (derive ::a ::b) (derive ::x ::y))]
+      (is (not (isa? h ::a ::y)))
+      (is (not (isa? h ::a ::x)))
+      (is (not (isa? h ::b ::x))))))
+
+(deftest isa-global
+  (testing "2-arg isa? uses the global hierarchy"
+    (derive :isa.test/cat :isa.test/mammal)
+    (is (isa? :isa.test/cat :isa.test/mammal))
+    (is (not (isa? :isa.test/mammal :isa.test/cat)))
+    (underive :isa.test/cat :isa.test/mammal)
+    (is (not (isa? :isa.test/cat :isa.test/mammal)))))
+
+(deftest isa-vector-tuple
+  (testing "vector tuple form: element-wise isa?"
+    (let [h (-> (make-hierarchy)
+                (derive ::cat ::mammal)
+                (derive ::dog ::mammal))]
+      (is (isa? h [::cat ::dog] [::mammal ::mammal]))
+      (is (isa? h [::cat ::dog] [::cat ::dog]))
+      (is (not (isa? h [::cat ::dog] [::mammal ::cat])))))
+  (testing "different lengths are never isa?"
+    (let [h (make-hierarchy)]
+      (is (not (isa? h [:a :b] [:a])))
+      (is (not (isa? h [:a] [:a :b])))))
+  (testing "empty tuples are isa? to each other"
+    (is (isa? (make-hierarchy) [] [])))
+  (testing "tuples nest"
+    (let [h (-> (make-hierarchy) (derive ::a ::b))]
+      (is (isa? h [::a [::a ::a]] [::b [::b ::b]]))))
+  (testing "asymmetric inner shape: nested vector vs scalar — falls through to (= child parent)"
+    (let [h (make-hierarchy)]
+      ;; Inner ::a vs ::b: at index 1, child is [::a] and parent is ::b.
+      ;; Neither equality nor ancestor-map matches, and only child is a
+      ;; vector — so the tuple branch short-circuits to false. No throw.
+      (is (not (isa? h [::a [::a]] [::b ::b]))))))
+
+(deftest isa-garbage
+  (testing "garbage input on either side: only the equality branch fires"
+    (let [h (make-hierarchy)]
+      (is (isa? h nil nil))
+      (is (not (isa? h nil 42)))
+      (is (not (isa? h 42 nil)))
+      (is (not (isa? h "s" :s)))
+      (is (not (isa? h [] [:a]))))))
