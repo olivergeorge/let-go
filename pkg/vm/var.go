@@ -5,11 +5,29 @@
 
 package vm
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
+// Var is a thread-safe mutable reference to a root value, plus a dynamic
+// binding stack. Root access (Deref's root path, SetRoot, Invoke, Arity,
+// AlterRoot) is synchronized via a generation counter and mutex, mirroring
+// Atom.Swap. Read-heavy paths use RLock; mutations and AlterRoot's CAS use
+// Lock.
+//
+// The dynamic binding stack (bindings) is intentionally NOT synchronized
+// here — under concurrent goroutines, racing append/index can produce
+// fatal Go runtime panics (corrupted slice header, index out of range),
+// not just lost updates. The binding model needs a per-execution-context
+// redesign (see feat/dynamic-var-binding-conveyance) before it can be
+// safely shared across goroutines; locking the slice in place would mask
+// the bug rather than fix it.
 type Var struct {
+	mu        sync.RWMutex
 	root      Value
-	bindings  []Value // dynamic binding stack (nil when unused — zero cost)
+	gen       uint64
+	bindings  []Value // see comment above — unsynchronized by design
 	nsref     *Namespace
 	ns        string
 	name      string
@@ -18,36 +36,47 @@ type Var struct {
 	isPrivate bool
 }
 
+func NewVar(nsref *Namespace, ns string, name string) *Var {
+	return &Var{
+		nsref: nsref,
+		ns:    ns,
+		name:  name,
+		root:  NIL,
+	}
+}
+
+// rootSnapshot returns the current root under the read lock. Callers that
+// only need to read the root (Deref's root branch, Invoke, Arity) should
+// use this rather than touching v.root directly.
+func (v *Var) rootSnapshot() Value {
+	v.mu.RLock()
+	r := v.root
+	v.mu.RUnlock()
+	return r
+}
+
 func (v *Var) Invoke(values []Value) (Value, error) {
-	f, ok := v.root.(Fn)
+	r := v.rootSnapshot()
+	f, ok := r.(Fn)
 	if !ok {
-		return NIL, fmt.Errorf("%v root does not implement Fn", v.root)
+		return NIL, fmt.Errorf("%v root does not implement Fn", r)
 	}
 	return f.Invoke(values)
 }
 
 func (v *Var) Arity() int {
-	f, ok := v.root.(Fn)
+	f, ok := v.rootSnapshot().(Fn)
 	if !ok {
 		return 0
 	}
 	return f.Arity()
 }
 
-func NewVar(nsref *Namespace, ns string, name string) *Var {
-	return &Var{
-		nsref:     nsref,
-		ns:        ns,
-		name:      name,
-		root:      NIL,
-		isMacro:   false,
-		isDynamic: false,
-		isPrivate: false,
-	}
-}
-
 func (v *Var) SetRoot(val Value) *Var {
+	v.mu.Lock()
 	v.root = val
+	v.gen++
+	v.mu.Unlock()
 	return v
 }
 
@@ -55,15 +84,46 @@ func (v *Var) Deref() Value {
 	if len(v.bindings) > 0 {
 		return v.bindings[len(v.bindings)-1]
 	}
-	return v.root
+	return v.rootSnapshot()
 }
 
-// PushBinding pushes a dynamic binding value.
+// AlterRoot atomically applies fn to the current root and stores the
+// result. Mirrors Atom.Swap: fn runs outside the lock, a generation
+// counter detects concurrent mutation, and on conflict the read/apply is
+// retried with the fresh value. Bypasses the dynamic binding stack — root
+// semantics, per Clojure's alter-var-root.
+func (v *Var) AlterRoot(fn Fn, args []Value) (Value, error) {
+	for {
+		v.mu.RLock()
+		old := v.root
+		oldGen := v.gen
+		v.mu.RUnlock()
+
+		result, err := fn.Invoke(append([]Value{old}, args...))
+		if err != nil {
+			return NIL, err
+		}
+
+		v.mu.Lock()
+		if v.gen == oldGen {
+			v.root = result
+			v.gen++
+			v.mu.Unlock()
+			return result, nil
+		}
+		v.mu.Unlock()
+		// generation moved — another goroutine altered root; retry
+	}
+}
+
+// PushBinding pushes a dynamic binding value. NOT goroutine-safe — see
+// the type-level comment on Var.
 func (v *Var) PushBinding(val Value) {
 	v.bindings = append(v.bindings, val)
 }
 
-// PopBinding removes the most recent dynamic binding.
+// PopBinding removes the most recent dynamic binding. NOT goroutine-safe
+// — see the type-level comment on Var.
 func (v *Var) PopBinding() {
 	if len(v.bindings) > 0 {
 		v.bindings = v.bindings[:len(v.bindings)-1]
