@@ -5434,10 +5434,12 @@ func installLangNS() {
 	})
 	ns.Def("array?", isArrayf)
 
-	// alter-var-root — atomically alter a var's root binding
+	// alter-var-root — atomically apply (f root & args) and set the result
+	// as the new root. Bypasses any current dynamic binding (root semantics
+	// per Clojure). Atomicity, retry, and root locking live in (*Var).AlterRoot.
 	alterVarRoot, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 2 {
-			return vm.NIL, fmt.Errorf("alter-var-root expects 2 args")
+		if len(vs) < 2 {
+			return vm.NIL, fmt.Errorf("alter-var-root expects at least 2 args")
 		}
 		v, ok := vs[0].(*vm.Var)
 		if !ok {
@@ -5447,13 +5449,7 @@ func installLangNS() {
 		if !ok {
 			return vm.NIL, fmt.Errorf("alter-var-root expects a function")
 		}
-		old := v.Deref()
-		result, err := fn.Invoke([]vm.Value{old})
-		if err != nil {
-			return vm.NIL, err
-		}
-		v.SetRoot(result)
-		return result, nil
+		return v.AlterRoot(fn, vs[2:])
 	})
 	ns.Def("alter-var-root", alterVarRoot)
 
