@@ -68,7 +68,6 @@
 (def release-pending-sends (fn [] 0))
 (def get-validator clojure.core/get-validator)
 (def future-cancel (fn [_] false))
-(def disj! disj)                                ; no transients for sets
 (def bound-fn* identity)
 (defmacro bound-fn [& body] `(fn ~@body))
 (defmacro with-precision [_ & body] `(do ~@body))

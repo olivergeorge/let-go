@@ -3060,6 +3060,25 @@ func installLangNS() {
 		}
 	})
 
+	// disj!: mutating disj on a transient set
+	disjBang, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) < 2 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
+		}
+		t, ok := vs[0].(*vm.TransientSet)
+		if !ok {
+			return vm.NIL, fmt.Errorf("disj! expected TransientSet")
+		}
+		var err error
+		for i := 1; i < len(vs); i++ {
+			t, err = t.Disj(vs[i])
+			if err != nil {
+				return vm.NIL, err
+			}
+		}
+		return t, nil
+	})
+
 	// dissoc!: mutating dissoc on a transient map
 	dissocBang, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) < 2 {
@@ -4592,6 +4611,7 @@ func installLangNS() {
 	ns.Def("persistent!", persistentf)
 	ns.Def("conj!", conjBang)
 	ns.Def("assoc!", assocBang)
+	ns.Def("disj!", disjBang)
 	ns.Def("dissoc!", dissocBang)
 	ns.Def("make-record-type", makeRecordType)
 	ns.Def("make-record", makeRecord)

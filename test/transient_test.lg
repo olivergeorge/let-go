@@ -72,6 +72,13 @@
       (is (nil? (:b m)))
       (is (= 3 (:c m))))))
 
+(deftest transient-set-disj
+  (testing "disj! on transient set"
+    (let [t (transient #{1 2 3})
+          t (disj! t 1 2 4)
+          s (persistent! t)]
+      (is (= #{3} s)))))
+
 (deftest transient-map-overwrite
   (testing "assoc! overwrites existing key"
     (let [t (transient {:a 1})

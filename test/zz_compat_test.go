@@ -32,7 +32,6 @@ var knownFailing = map[string]bool{
 	"binding":        true, // thread binding propagation to futures
 	"bound_fn":       true, // bound-fn shim doesn't propagate dyn vars
 	"bound_fn_star":  true, // bound-fn* shim is identity
-	"disj_bang":      true, // disj! shim falls through to disj
 	"dissoc":         true, // dissoc on records has quirky behavior
 	"empty":          true, // empty on deftype/non-coll edge cases
 	"plus_squote":    true, // +' BigInt promotion at Long boundary
