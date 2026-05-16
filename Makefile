@@ -1,3 +1,5 @@
+.PHONY: run generate build test clojure-compat-report clean lint install-golangci-lint
+
 run: build
 	./lg
 
@@ -9,6 +11,9 @@ build: lg.go pkg/**/*
 
 test: pkg/**/*
 	go test -count=1 -v ./test
+
+clojure-compat-report:
+	@./scripts/clojure_compat_report.sh
 
 clean:
 	rm ./lg

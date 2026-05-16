@@ -304,7 +304,7 @@ func (c *Context) compileForm(o vm.Value) error {
 		c.chunk.AddSourceInfo(*info)
 	}
 	switch o.Type() {
-	case vm.IntType, vm.FloatType, vm.StringType, vm.NilType, vm.BooleanType, vm.KeywordType, vm.CharType, vm.VoidType, vm.FuncType, vm.BigIntType, vm.RatioType, vm.BigDecimalType, vm.UUIDType, vm.InstantType:
+	case vm.IntType, vm.FloatType, vm.StringType, vm.NilType, vm.BooleanType, vm.KeywordType, vm.CharType, vm.VoidType, vm.FuncType, vm.NativeFnType, vm.BigIntType, vm.RatioType, vm.BigDecimalType, vm.UUIDType, vm.InstantType:
 		n := c.constant(o)
 		c.emitWithArg(vm.OP_LOAD_CONST, n)
 		c.incSP(1)
@@ -410,6 +410,27 @@ func (c *Context) compileForm(o vm.Value) error {
 
 		c.emitWithArg(vm.OP_INVOKE, count*2)
 		c.decSP(count * 2)
+		c.tailPosition = tp
+	case vm.SetType:
+		tp := c.tailPosition
+		c.tailPosition = false
+
+		hashSet := c.constant(rt.CoreNS.Lookup("hash-set"))
+		c.emitWithArg(vm.OP_LOAD_CONST, hashSet)
+		c.incSP(1)
+
+		count := 0
+		if sq, ok := o.(vm.Sequable); ok {
+			for s := sq.Seq(); s != nil && s != vm.EmptyList; s = s.Next() {
+				if err := c.compileForm(s.First()); err != nil {
+					return NewCompileError("compiling set element").Wrap(err)
+				}
+				count++
+			}
+		}
+
+		c.emitWithArg(vm.OP_INVOKE, count)
+		c.decSP(count)
 		c.tailPosition = tp
 	case vm.ListType:
 		prevList := c.currentList

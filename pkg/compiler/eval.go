@@ -152,6 +152,32 @@ func postCoreInit() {
 	lsVar := coreNS.LookupOrAdd(vm.Symbol("load-string"))
 	lsVar.(*vm.Var).SetRoot(loadStringFn)
 
+	// eval: compile and evaluate a single already-read form in the current namespace.
+	evalFn, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, nil
+		}
+		ns := rt.CurrentNS.Deref().(*vm.Namespace)
+		c := NewCompiler(consts, ns)
+		c.source = "<eval>"
+		c.chunk = vm.NewCodeChunk(c.consts)
+		c.resetSP()
+		if err := c.compileForm(vs[0]); err != nil {
+			return vm.NIL, err
+		}
+		c.chunk.SetMaxStack(c.spMax)
+		c.emit(vm.OP_RETURN)
+		f := vm.NewFrame(c.chunk, nil)
+		out, err := f.RunProtected()
+		vm.ReleaseFrame(f)
+		if err != nil {
+			return vm.NIL, err
+		}
+		return out, nil
+	})
+	evalVar := coreNS.LookupOrAdd(vm.Symbol("eval"))
+	evalVar.(*vm.Var).SetRoot(evalFn)
+
 	// set-read-clj!: opt in to matching :clj in reader conditionals.
 	// Used by the real-world compat runner; off by default so the
 	// conformance suite doesn't reach JVM-only :clj branches.
