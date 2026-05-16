@@ -218,6 +218,7 @@ func nsNameFromCompatPath(filename string) string {
 
 func runCompatTest(t *testing.T, c *vm.Consts, filename string, totals *suiteCounters) {
 	ch := make(chan compatTestResult, 1)
+	runtime.GC()
 	baseAlloc := currentAlloc()
 
 	go func() {
@@ -338,7 +339,10 @@ func runCompatTest(t *testing.T, c *vm.Consts, filename string, totals *suiteCou
 			return
 
 		case <-ticker.C:
-			// Check memory growth
+			// Check live memory growth. Force a collection first so large
+			// temporary allocations from legitimate bounded tests don't look
+			// like retained heap.
+			runtime.GC()
 			if currentAlloc()-baseAlloc > memLimitBytes {
 				totals.addSkip("runtime")
 				runtime.GC() // try to reclaim before moving on
