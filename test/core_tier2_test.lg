@@ -53,6 +53,28 @@
       (swap! a + 3)
       (is (= [15 18] (deref log))))))
 
+(deftest watch-ref-identity
+  (testing "watch refs are stable inside hash collections"
+    (let [messages (atom #{})
+          a (atom 0)]
+      (add-watch a :w (fn [k r o n]
+                        (swap! messages conj {:key k :ref r :old o :new n})))
+      (swap! a inc)
+      (swap! a inc)
+      (is (= #{{:key :w :ref a :old 0 :new 1}
+               {:key :w :ref a :old 1 :new 2}}
+             (deref messages))))))
+
+(deftest watch-errors-propagate
+  (testing "watch errors are visible to callers"
+    (let [a (atom 0)]
+      (add-watch a :err (fn [k r o n] (throw (ex-info "watch failed" {:key k :old o :new n}))))
+      (is (= :caught
+             (try
+               (swap! a inc)
+               :missed
+               (catch e :caught)))))))
+
 (deftest remove-watch-test
   (testing "removed watch is not called"
     (let [log (atom 0)

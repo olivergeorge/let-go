@@ -215,9 +215,8 @@
 (defn qualified-symbol? [x] (and (symbol? x) (some? (namespace x))))
 
 ;; bleh
-(defn list? [x] (= (type x) (type '())))
 (defn vector? [x] (= (type x) (type [])))
-;; map? and set? are native builtins (handle sorted variants)
+;; list?, map?, and set? are native builtins (handle seq/list distinctions and sorted variants)
 (defn symbol? [x] (= (type x) (type 'x)))
 (defn keyword? [x] (= (type x) (type :x)))
 (defn string? [x] (= (type x) (type "")))

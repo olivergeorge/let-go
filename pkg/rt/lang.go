@@ -1462,6 +1462,14 @@ func installLangNS() {
 		return vm.Boolean(ok), nil
 	})
 
+	isList, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
+		}
+		_, ok := vs[0].(*vm.List)
+		return vm.Boolean(ok), nil
+	})
+
 	isColl, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 1 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
@@ -2097,7 +2105,7 @@ func installLangNS() {
 		if !ok {
 			return vm.NIL, fmt.Errorf("reset expected Atom")
 		}
-		return at.Reset(vs[1]), nil
+		return at.Reset(vs[1])
 	})
 
 	// swap-vals!: like swap! but returns [old new]
@@ -2131,7 +2139,9 @@ func installLangNS() {
 			return vm.NIL, fmt.Errorf("reset-vals! expected Atom")
 		}
 		old := at.Deref()
-		at.Reset(vs[1])
+		if _, err := at.Reset(vs[1]); err != nil {
+			return vm.NIL, err
+		}
 		return vm.ArrayVector{old, vs[1]}, nil
 	})
 
@@ -4427,6 +4437,7 @@ func installLangNS() {
 
 	ns.Def("seq", seq)
 	ns.Def("seq?", isSeq)
+	ns.Def("list?", isList)
 
 	// basic predicates needed during early core bootstrap
 	ns.Def("coll?", isColl)

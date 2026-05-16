@@ -33,24 +33,27 @@ var AtomType *theAtomType = &theAtomType{}
 // Swap uses optimistic concurrency with a generation counter — no value comparison needed.
 // The function may be called multiple times under contention.
 type Atom struct {
-	val      Value
-	gen      uint64 // generation counter — incremented on every mutation
-	mu       sync.Mutex
-	meta     Value
-	watches  map[Value]Fn // key → watch fn
+	val     Value
+	gen     uint64 // generation counter — incremented on every mutation
+	mu      sync.Mutex
+	meta    Value
+	watches map[Value]Fn // key → watch fn
 }
 
 func NewAtom(root Value) *Atom {
 	return &Atom{val: root}
 }
 
-func (a *Atom) notifyWatches(oldVal, newVal Value) {
+func (a *Atom) notifyWatches(oldVal, newVal Value) error {
 	if len(a.watches) == 0 {
-		return
+		return nil
 	}
 	for key, fn := range a.watches {
-		fn.Invoke([]Value{key, a, oldVal, newVal})
+		if _, err := fn.Invoke([]Value{key, a, oldVal, newVal}); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (a *Atom) AddWatch(key Value, fn Fn) {
@@ -97,7 +100,7 @@ func (a *Atom) AlterMeta(fn Fn, args []Value) (Value, error) {
 	return newMeta, nil
 }
 
-func (a *Atom) Reset(newVal Value) Value {
+func (a *Atom) Reset(newVal Value) (Value, error) {
 	a.mu.Lock()
 	oldVal := a.val
 	a.val = newVal
@@ -105,9 +108,11 @@ func (a *Atom) Reset(newVal Value) Value {
 	watches := a.watches
 	a.mu.Unlock()
 	if len(watches) > 0 {
-		a.notifyWatches(oldVal, newVal)
+		if err := a.notifyWatches(oldVal, newVal); err != nil {
+			return NIL, err
+		}
 	}
-	return newVal
+	return newVal, nil
 }
 
 // Swap applies fn to the current value and atomically sets the result.
@@ -135,7 +140,9 @@ func (a *Atom) Swap(fn Fn, args []Value) (Value, error) {
 			watches := a.watches
 			a.mu.Unlock()
 			if len(watches) > 0 {
-				a.notifyWatches(oldVal, newVal)
+				if err := a.notifyWatches(oldVal, newVal); err != nil {
+					return NIL, err
+				}
 			}
 			return newVal, nil
 		}
@@ -156,7 +163,11 @@ func (v *Atom) Type() ValueType {
 }
 
 func (v *Atom) Unbox() interface{} {
-	return v.Deref().Unbox()
+	return v
+}
+
+func (v *Atom) Hash() uint32 {
+	return hashString(fmt.Sprintf("%p", v))
 }
 
 func (v *Atom) String() string {
