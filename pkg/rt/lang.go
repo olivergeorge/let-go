@@ -5611,11 +5611,13 @@ func installLangNS() {
 		if !ok {
 			return vm.NIL, fmt.Errorf("intern expects a symbol name")
 		}
-		var val vm.Value = vm.NIL
-		if len(vs) == 3 {
-			val = vs[2]
+		if len(vs) == 2 {
+			if existing := targetNS.LookupLocal(sym); existing != nil {
+				return existing, nil
+			}
+			return targetNS.Def(string(sym), vm.NIL), nil
 		}
-		v := targetNS.Def(string(sym), val)
+		v := targetNS.Def(string(sym), vs[2])
 		return v, nil
 	})
 	ns.Def("intern", internf)
