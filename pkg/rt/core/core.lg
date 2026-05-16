@@ -583,9 +583,29 @@
           `(~clean (let* ~nbs ~@body)))
         `(~bindings ~@body)))))
 
+(defn- name-fn-arity [name self arity]
+  (let [bindings (first arity)
+        body (next arity)]
+    (list bindings
+          (cons 'let (cons (vector name (list 'deref self)) body)))))
+
 (defmacro fn [& forms]
   (let [forms (if (string? (first forms)) (next forms) forms)]
     (cond
+      (symbol? (first forms))
+      (let [name (first forms)
+            forms (next forms)
+            forms (if (string? (first forms)) (next forms) forms)
+            self (gensym "self__")]
+        (if (vector? (first forms))
+          (let [arity (fn-expand (first forms) (next forms))]
+            `(let [~self (atom nil)]
+               (reset! ~self (fn* ~(name-fn-arity name self arity)))
+               (deref ~self)))
+          `(let [~self (atom nil)]
+             (reset! ~self (fn* ~@(map #(name-fn-arity name self (fn-expand (first %) (next %))) forms)))
+             (deref ~self))))
+
       (vector? (first forms))
       (cons 'fn* (fn-expand (first forms) (next forms)))
 
@@ -692,24 +712,24 @@
   ([f] f)
   ([f arg1]
    (fn
-     ([] (f arg1))
-     ([x] (f arg1 x))
-     ([x y] (f arg1 x y))
-     ([x y z] (f arg1 x y z))
+     ([] (apply f (list arg1)))
+     ([x] (apply f (list arg1 x)))
+     ([x y] (apply f (list arg1 x y)))
+     ([x y z] (apply f (list arg1 x y z)))
      ([x y z & args] (apply f arg1 x y z args))))
   ([f arg1 arg2]
    (fn
-     ([] (f arg1 arg2))
-     ([x] (f arg1 arg2 x))
-     ([x y] (f arg1 arg2 x y))
-     ([x y z] (f arg1 arg2 x y z))
+     ([] (apply f (list arg1 arg2)))
+     ([x] (apply f (list arg1 arg2 x)))
+     ([x y] (apply f (list arg1 arg2 x y)))
+     ([x y z] (apply f (list arg1 arg2 x y z)))
      ([x y z & args] (apply f arg1 arg2 x y z args))))
   ([f arg1 arg2 arg3]
    (fn
-     ([] (f arg1 arg2 arg3))
-     ([x] (f arg1 arg2 arg3 x))
-     ([x y] (f arg1 arg2 arg3 x y))
-     ([x y z] (f arg1 arg2 arg3 x y z))
+     ([] (apply f (list arg1 arg2 arg3)))
+     ([x] (apply f (list arg1 arg2 arg3 x)))
+     ([x y] (apply f (list arg1 arg2 arg3 x y)))
+     ([x y z] (apply f (list arg1 arg2 arg3 x y z)))
      ([x y z & args] (apply f arg1 arg2 arg3 x y z args))))
   ([f arg1 arg2 arg3 & more]
    (fn [& args] (apply f arg1 arg2 arg3 (concat more args)))))
@@ -730,19 +750,23 @@
 
 (defmacro when-let
   [bindings & body]
-  (let [form (bindings 0) tst (bindings 1)]
-    `(let [temp# ~tst]
-       (when temp#
-         (let [~form temp#]
-           ~@body)))))
+  (if (not (= 2 (count bindings)))
+    (throw "when-let requires exactly two forms in binding vector")
+    (let [form (bindings 0) tst (bindings 1)]
+      `(let [temp# ~tst]
+         (when temp#
+           (let [~form temp#]
+             ~@body))))))
 
 (defmacro when-first
   [bindings & body]
-  (let [x (bindings 0) coll (bindings 1)
-        s (gensym "s__")]
-    `(when-let [~s (seq ~coll)]
-       (let [~x (first ~s)]
-         ~@body))))
+  (if (not (= 2 (count bindings)))
+    (throw "when-first requires exactly two forms in binding vector")
+    (let [x (bindings 0) coll (bindings 1)
+          s (gensym "s__")]
+      `(when-let [~s (seq ~coll)]
+         (let [~x (first ~s)]
+           ~@body)))))
 
 ;; letfn — mutually recursive local functions
 ;; (letfn [(f [x] ...) (g [x] ...)] body)

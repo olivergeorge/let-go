@@ -63,7 +63,6 @@ var knownFailing = map[string]bool{
 	"not_empty":      true, // not-empty on list containing nil
 	"nthnext":        true, // nthnext on various types
 	"num":            true, // num edge cases
-	"partial":        true, // lazy evaluation edge case
 	"peek":           true, // peek on cons
 	"plus":           true, // overflow not detected
 	"reduce":         true, // reduce interop edge cases
@@ -71,8 +70,7 @@ var knownFailing = map[string]bool{
 	"slash":          true, // division edge cases
 	"star":           true, // overflow not detected
 	"str":            true, // str reader conditional
-	"when_first":     true, // when-first edge cases
-	"when_let":       true, // when-let macroexpand test
+	"when_let":       true, // lazy seq realization count
 }
 
 // suiteCounters tracks aggregate assertion counts across the entire suite.
