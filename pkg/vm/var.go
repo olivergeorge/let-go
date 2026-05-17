@@ -79,6 +79,16 @@ func (v *Var) Deref() Value {
 	return v.root
 }
 
+// Root returns the var's root binding directly, bypassing any current
+// dynamic binding on the stack. Use this where Clojure semantics require
+// the root (e.g. alter-var-root) rather than the currently visible deref
+// value.
+func (v *Var) Root() Value {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.root
+}
+
 // PushBinding pushes a dynamic binding value.
 func (v *Var) PushBinding(val Value) {
 	bindingsMu.Lock()
@@ -177,8 +187,12 @@ func (v *Var) notifyWatches(oldVal, newVal Value) error {
 }
 
 func (v *Var) AlterRoot(fn Fn) (Value, error) {
-	old := v.Deref()
-	result, err := fn.Invoke([]Value{old})
+	return v.AlterRootArgs(fn, nil)
+}
+
+func (v *Var) AlterRootArgs(fn Fn, args []Value) (Value, error) {
+	old := v.Root()
+	result, err := fn.Invoke(append([]Value{old}, args...))
 	if err != nil {
 		return NIL, err
 	}

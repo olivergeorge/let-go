@@ -166,33 +166,9 @@
 (defn inc [x] (+ x 1))
 (defn dec [x] (- x 1))
 
-;; Auto-promoting exact variants.
-(defn +' 
-  ([] 0)
-  ([x] x)
-  ([x y]
-   (try
-     (+ x y)
-     (catch e (+ (bigint x) (bigint y)))))
-  ([x y & more]
-   (reduce +' (+' x y) more)))
-(defn -'
-  ([x] (try (- x) (catch e (- (bigint x)))))
-  ([x y]
-   (try
-     (- x y)
-     (catch e (- (bigint x) (bigint y)))))
-  ([x y & more]
-   (reduce -' (-' x y) more)))
-(defn *'
-  ([] 1)
-  ([x] x)
-  ([x y]
-   (try
-     (* x y)
-     (catch e (* (bigint x) (bigint y)))))
-  ([x y & more]
-   (reduce *' (*' x y) more)))
+;; Auto-promoting variants: +' -' *' are native fns registered in
+;; pkg/rt/lang.go that promote to BigInt on int64 overflow. inc'/dec' compose
+;; on top of those, mirroring Clojure's `(defn inc' [x] (+' x 1))` shape.
 (defn inc' [x] (+' x 1))
 (defn dec' [x] (-' x 1))
 

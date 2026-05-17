@@ -10,8 +10,8 @@
 Greetings loafers! _(λ-gophers haha, get it?)_
 
 let-go is a Clojure dialect with a bytecode compiler and stack VM, written in Go.
-A single ~10MB binary, ~7ms cold start, no JVM. Roughly 95% Clojure-compatible
-on the [jank-lang test suite](https://github.com/jank-lang/clojure-test-suite).
+A single ~10MB binary, ~7ms cold start, no JVM. It passes the vendored
+`:clj` lens of the [jank-lang test suite](https://github.com/jank-lang/clojure-test-suite).
 
 I started this in 2021 as an elaborate joke: an excuse to write Clojure while
 pretending to write Go. It turned out useful. I use it for CLIs, scripts, and
@@ -68,16 +68,14 @@ Full per-benchmark numbers and methodology:
 ## Compatibility
 
 Tested against [jank-lang/clojure-test-suite](https://github.com/jank-lang/clojure-test-suite):
-**4696 / 4921 assertions pass (95.4%)** across 217 files. Remaining gaps are
-mostly numeric edge cases (overflow detection on `+`/`-`/`*`/`inc`/`dec`,
-BigInt promotion at the Long boundary, BigDecimal) plus a handful of stub
-namespaces.
+**5522 / 5522 assertions pass** across 224 files through the `:clj` reader
+lens, with no known failures, compile skips, panic skips, or runtime skips.
 
 ### Standard namespaces
 
 | Namespace            | Status                                                                                                                                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `clojure.core`       | macros, destructuring, lazy seqs, transducers, protocols, records, multimethods, atoms, regex, metadata, BigInt                                                                               |
+| `clojure.core`       | macros, destructuring, lazy seqs, transducers, protocols, records, multimethods, hierarchies, atoms, regex, metadata, BigInt, BigDecimal                                                       |
 | `clojure.string`     | full                                                                                                                                                                                          |
 | `clojure.set`        | full                                                                                                                                                                                          |
 | `clojure.walk`       | `prewalk`, `postwalk`, `keywordize-keys`, `stringify-keys`, `walk`                                                                                                                            |
@@ -119,15 +117,12 @@ for what's available.
 
 - **Refs / STM** (atoms + channels cover practical concurrency)
 - **Agents** (use `go` blocks and channels)
-- **Hierarchies** (`derive`, `underive`, `ancestors`, `descendants`, `parents`): stubs only
-- **`with-precision`**: `BigDecimal` works (`M` literals, `bigdec`, exact arithmetic) but `with-precision` is a no-op
 - **Chunked sequences**: lazy seqs are unchunked
 - **Custom tagged literal readers**: built-in `#uuid` and `#inst` work; `*data-readers*` / `*default-data-reader-fn*` are not implemented
 - **`deftype`** (use `defrecord`)
 - **`reify`** (protocols can only be extended to named types)
 - **Spec** (no `clojure.spec`)
-- **`alter-var-root`**
-- **Numeric overflow detection**: `+`/`-`/`*`/`inc`/`dec` wrap silently on int64 overflow; use `+'`/`-'`/`*'` for BigInt math
+- **Checked arithmetic on base ops**: `+`/`-`/`*`/`inc`/`dec` use fixed-width integer arithmetic; use `+'`/`-'`/`*'`/`inc'`/`dec'` for BigInt-promoting exact math
 - **`subseq` / `rsubseq`**: sorted collections work (`sorted-map`, `sorted-set`, `rseq`); range queries don't
 
 ### Behavioral differences
@@ -135,7 +130,7 @@ for what's available.
 - `concat*` (used internally by quasiquote) is eager; user-facing `concat` is lazy
 - `<!` / `<!!` are identical, same for `>!` / `>!!` (Go channels always block)
 - `go` blocks are real goroutines, not IOC state machines (cheaper, and they can call blocking ops directly)
-- No BigDecimal: numeric tower is `int64` + `float64` + `BigInt`
+- Numeric tower is pragmatic: `int64`, `float64`, `BigInt`, ratios, and `BigDecimal`, without the JVM's full primitive/class model
 - Regex is Go flavor (`re2`), not Java regex
 - `letfn` uses atoms internally for forward references
 

@@ -1021,6 +1021,62 @@ func installLangNS() {
 		return acc, nil
 	})
 
+	// Apostrophe arithmetic: identical to + - * but promotes to BigInt on
+	// int64 overflow instead of wrapping silently.
+	plusP, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) == 0 {
+			return vm.MakeInt(0), nil
+		}
+		if len(vs) == 1 {
+			return vs[0], nil
+		}
+		acc := vs[0]
+		for i := 1; i < len(vs); i++ {
+			var err error
+			acc, err = vm.NumAddP(acc, vs[i])
+			if err != nil {
+				return vm.NIL, err
+			}
+		}
+		return acc, nil
+	})
+
+	mulP, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) == 0 {
+			return vm.MakeInt(1), nil
+		}
+		if len(vs) == 1 {
+			return vs[0], nil
+		}
+		acc := vs[0]
+		for i := 1; i < len(vs); i++ {
+			var err error
+			acc, err = vm.NumMulP(acc, vs[i])
+			if err != nil {
+				return vm.NIL, err
+			}
+		}
+		return acc, nil
+	})
+
+	subP, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) < 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
+		}
+		if len(vs) == 1 {
+			return vm.NumNegP(vs[0])
+		}
+		acc := vs[0]
+		for i := 1; i < len(vs); i++ {
+			var err error
+			acc, err = vm.NumSubP(acc, vs[i])
+			if err != nil {
+				return vm.NIL, err
+			}
+		}
+		return acc, nil
+	})
+
 	equals, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		length := len(vs)
 		if length < 1 {
@@ -4810,6 +4866,9 @@ func installLangNS() {
 	ns.Def("*", mul)
 	ns.Def("-", sub)
 	ns.Def("/", div)
+	ns.Def("+'", plusP)
+	ns.Def("*'", mulP)
+	ns.Def("-'", subP)
 
 	ns.Def("=", equals)
 	ns.Def("not=", notEq)
@@ -5844,10 +5903,14 @@ func installLangNS() {
 	})
 	ns.Def("array?", isArrayf)
 
-	// alter-var-root — atomically alter a var's root binding
+	// alter-var-root — alter a var's root binding via (f root & args).
+	// Reads/writes the root, bypassing any current dynamic binding.
+	// TODO: the read/apply/write is not atomic. let-go evaluates synchronously
+	// today, so contention does not arise. If concurrent evaluation is added,
+	// centralize the read/apply/write under Var-level synchronization.
 	alterVarRoot, _ := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
-		if len(vs) != 2 {
-			return vm.NIL, fmt.Errorf("alter-var-root expects 2 args")
+		if len(vs) < 2 {
+			return vm.NIL, fmt.Errorf("alter-var-root expects at least 2 args")
 		}
 		v, ok := vs[0].(*vm.Var)
 		if !ok {
@@ -5857,7 +5920,11 @@ func installLangNS() {
 		if !ok {
 			return vm.NIL, fmt.Errorf("alter-var-root expects a function")
 		}
-		return v.AlterRoot(fn)
+		result, err := v.AlterRootArgs(fn, vs[2:])
+		if err != nil {
+			return vm.NIL, err
+		}
+		return result, nil
 	})
 	ns.Def("alter-var-root", alterVarRoot)
 
