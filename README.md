@@ -118,11 +118,10 @@ for what's available.
 - **Refs / STM** (atoms + channels cover practical concurrency)
 - **Agents** (use `go` blocks and channels)
 - **Chunked sequences**: lazy seqs are unchunked
-- **Custom tagged literal readers**: built-in `#uuid` and `#inst` work; `*data-readers*` / `*default-data-reader-fn*` are not implemented
+- **Custom tagged literal readers**: built-in `#uuid` and `#inst` work; unknown tags read as their payload, and `*data-readers*` / `*default-data-reader-fn*` are not implemented
 - **Java-style `deftype` method bodies / host interfaces**: field-backed `deftype` and protocol implementations work; JVM host methods do not
 - **`reify`** (protocols can only be extended to named types)
 - **Spec** (no `clojure.spec`)
-- **Checked arithmetic on base ops**: `+`/`-`/`*`/`inc`/`dec` use fixed-width integer arithmetic; use `+'`/`-'`/`*'`/`inc'`/`dec'` for BigInt-promoting exact math
 - **`subseq` / `rsubseq`**: sorted collections work (`sorted-map`, `sorted-set`, `rseq`); range queries don't
 
 ### Behavioral differences
@@ -131,6 +130,7 @@ for what's available.
 - `<!` / `<!!` are identical, same for `>!` / `>!!` (Go channels always block)
 - `go` blocks are real goroutines, not IOC state machines (cheaper, and they can call blocking ops directly)
 - Numeric tower is pragmatic: `int64`, `float64`, `BigInt`, ratios, and `BigDecimal`, without the JVM's full primitive/class model
+- Base integer `+`/`-`/`*`/`inc`/`dec` throw on overflow; use `+'`/`-'`/`*'`/`inc'`/`dec'` for BigInt-promoting exact math
 - Regex is Go flavor (`re2`), not Java regex
 - `letfn` uses atoms internally for forward references
 
