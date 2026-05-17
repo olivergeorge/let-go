@@ -1876,7 +1876,7 @@
 ;; mutate through derive / underive, not by reaching into the var.
 (def ^:private global-hierarchy (make-hierarchy))
 
-(defn- add-edge
+(defn- add-derivation
   "Adds direct edge tag→parent to hierarchy h, updating ancestors and
   descendants transitively. Internal: callers must ensure the edge is
   well-formed (idents, no cycle). Does NOT check whether parent is already
@@ -1930,16 +1930,15 @@
    (when-not (ident? tag) (throw (str "tag must be a keyword or symbol, got " tag)))
    (when-not (ident? parent) (throw (str "parent must be a keyword or symbol, got " parent)))
    (when (= tag parent) (throw (str "Cyclic derivation: " tag " has " parent " as ancestor")))
-   (let [parent-map (:parents h)
-         anc-map    (:ancestors h)]
-     (or
-      (when-not (contains? (get parent-map tag #{}) parent)
-        (when (contains? (get anc-map tag #{}) parent)
-          (throw (str tag " already has " parent " as ancestor")))
-        (when (contains? (get anc-map parent #{}) tag)
-          (throw (str "Cyclic derivation: " parent " has " tag " as ancestor")))
-        (add-edge h tag parent))
-      h))))
+   (let [anc-map (:ancestors h)]
+     (if (contains? (get (:parents h) tag #{}) parent)
+       h
+       (do
+         (when (contains? (get anc-map tag #{}) parent)
+           (throw (str tag " already has " parent " as ancestor")))
+         (when (contains? (get anc-map parent #{}) tag)
+           (throw (str "Cyclic derivation: " parent " has " tag " as ancestor")))
+         (add-derivation h tag parent))))))
 
 (defn underive
   "Removes a parent/child relationship between tag and parent.
@@ -1955,12 +1954,13 @@
   ([h tag parent]
    (when-not (hierarchy-shape? h) (throw (str "Invalid hierarchy: " h)))
    ;; Rebuild approach: remove the direct edge, then re-add every remaining
-   ;; edge into a fresh hierarchy via add-edge (unchecked). We can't use
-   ;; public derive here: new-parent-map may legally contain a redundant
-   ;; direct edge X→Z whose transitive path X→Y→Z is also present
-   ;; (Clojure permits this when the direct edge was non-redundant at the
-   ;; time it was added). Depending on iteration order, replay through
-   ;; public derive would see Z already in ancestors[X] and wrongly throw.
+   ;; edge into a fresh hierarchy via add-derivation (unchecked). We can't
+   ;; use public derive here: new-parent-map may legally contain a
+   ;; redundant direct edge X→Z whose transitive path X→Y→Z is also
+   ;; present (Clojure permits this when the direct edge was non-redundant
+   ;; at the time it was added). Depending on iteration order, replay
+   ;; through public derive would see Z already in ancestors[X] and
+   ;; wrongly throw.
    (let [parent-map (:parents h)]
      (if (contains? (get parent-map tag #{}) parent)
        (let [remaining-parents (disj (get parent-map tag) parent)
@@ -1968,8 +1968,8 @@
                                  (assoc parent-map tag remaining-parents)
                                  (dissoc parent-map tag))]
          (reduce
-          (fn [acc e]
-            (reduce (fn [a p] (add-edge a (key e) p)) acc (val e)))
+          (fn [acc [child ps]]
+            (reduce (fn [a p] (add-derivation a child p)) acc ps))
           (make-hierarchy)
           new-parent-map))
        h))))
@@ -2001,12 +2001,13 @@
    (or (= child parent)
        (contains? (get (:ancestors h) child) parent)
        (and (vector? parent) (vector? child)
-            (= (count parent) (count child))
-            (loop [i 0]
-              (cond
-                (= i (count parent)) true
-                (isa? h (nth child i) (nth parent i)) (recur (inc i))
-                :else false))))))
+            (let [n (count parent)]
+              (and (= n (count child))
+                   (loop [i 0]
+                     (cond
+                       (= i n) true
+                       (isa? h (nth child i) (nth parent i)) (recur (inc i))
+                       :else false))))))))
 
 ;; --- Multimethods ---
 
