@@ -10,7 +10,7 @@
 Greetings loafers! _(λ-gophers haha, get it?)_
 
 let-go is a Clojure dialect with a bytecode compiler and stack VM, written in Go.
-A single ~10MB binary, ~7ms cold start, no JVM. It passes the vendored
+A single ~10.7MB binary, ~7ms cold start, no JVM. It passes the vendored
 `:clj` lens of the [jank-lang test suite](https://github.com/jank-lang/clojure-test-suite).
 
 I started this in 2021 as an elaborate joke: an excuse to write Clojure while
@@ -47,7 +47,7 @@ files are valid Clojure that runs unmodified. Apple M1 Pro.
 
 |                 | let-go     | babashka | joker | go-joker | gloat | clojure JVM |
 | --------------- | ---------- | -------- | ----- | -------- | ----- | ----------- |
-| **Binary size** | **10MB**   | 68MB     | 26MB  | 32MB     | 26MB  | 304MB (JDK) |
+| **Binary size** | **10.7MB** | 68MB     | 26MB  | 32MB     | 26MB  | 304MB (JDK) |
 | **Startup**     | **6.7ms**  | 18ms     | 12ms  | 13ms     | 16ms  | 363ms       |
 | **Idle memory** | **13.5MB** | 27MB     | 22MB  | 23MB     | 23MB  | 92MB        |
 
