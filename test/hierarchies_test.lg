@@ -170,6 +170,31 @@
       (is (= h (underive h ::a ::c)))
       (is (= h (underive h ::x ::y))))))
 
+(deftest underive-3arg-redundant-direct-edge-preserved
+  ;; Regression test for an iteration-order-dependent bug in underive's
+  ;; replay strategy. The state below contains a redundant direct edge
+  ;; (::a → ::c is both direct and reachable via ::a → ::b → ::c), which
+  ;; is legal in Clojure because each derive was non-redundant when added.
+  ;; If replay iterates ::b's entry before ::a's, AND ::a's parent-set
+  ;; iterates ::b before ::c, then `derive ::a ::c` fires after ::a
+  ;; already has ::c as a transitive ancestor and throws "already has X
+  ;; as ancestor". Fix: replay uses an unchecked edge-add helper, since
+  ;; the parents map is by construction a valid hierarchy minus one edge.
+  (testing "underive preserves a redundant direct edge regardless of replay order"
+    (let [h  (-> (make-hierarchy)
+                 (derive ::b ::c)
+                 (derive ::a ::c)
+                 (derive ::a ::b)
+                 (derive ::d ::a))
+          h' (underive h ::d ::a)]
+      (is (= #{::c ::b} (get-in h' [:parents ::a])))
+      (is (= #{::c}     (get-in h' [:parents ::b])))
+      (is (= #{::c ::b} (get-in h' [:ancestors ::a])))
+      (is (= #{::c}     (get-in h' [:ancestors ::b])))
+      (is (= #{::a ::b} (get-in h' [:descendants ::c])))
+      (is (= #{::a}     (get-in h' [:descendants ::b])))
+      (is (nil? (get-in h' [:parents ::d]))))))
+
 (deftest underive-3arg-bad-hierarchy
   (testing "throws on malformed hierarchy"
     (is (= :caught (try (underive nil ::a ::b) (catch e :caught))))
