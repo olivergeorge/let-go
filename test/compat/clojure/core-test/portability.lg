@@ -68,8 +68,9 @@
 (def release-pending-sends (fn [] 0))
 (def get-validator clojure.core/get-validator)
 (def future-cancel (fn [_] false))
-(def bound-fn* identity)
-(defmacro bound-fn [& body] `(fn ~@body))
+(def bound-fn* clojure.core/bound-fn*)
+(defmacro bound-fn [& body]
+  (list 'clojure.core/bound-fn* (cons 'fn body)))
 (defmacro with-precision [_ & body] `(do ~@body))
 ;; dosync — we don't have STM. Single-threaded evaluation of the body
 ;; behaves atomically with respect to other let-go code.

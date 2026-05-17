@@ -23,6 +23,13 @@ type Var struct {
 	watches   map[Value]Fn
 }
 
+var (
+	bindingsMu sync.Mutex
+	activeVars = map[*Var]struct{}{}
+)
+
+type BindingSnapshot map[*Var][]Value
+
 func (v *Var) Invoke(values []Value) (Value, error) {
 	f, ok := v.root.(Fn)
 	if !ok {
@@ -59,28 +66,95 @@ func (v *Var) SetRoot(val Value) *Var {
 }
 
 func (v *Var) Deref() Value {
+	bindingsMu.Lock()
+	if len(v.bindings) > 0 {
+		out := v.bindings[len(v.bindings)-1]
+		bindingsMu.Unlock()
+		return out
+	}
+	bindingsMu.Unlock()
+
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if len(v.bindings) > 0 {
-		return v.bindings[len(v.bindings)-1]
-	}
 	return v.root
 }
 
 // PushBinding pushes a dynamic binding value.
 func (v *Var) PushBinding(val Value) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
+	bindingsMu.Lock()
+	defer bindingsMu.Unlock()
 	v.bindings = append(v.bindings, val)
+	activeVars[v] = struct{}{}
 }
 
 // PopBinding removes the most recent dynamic binding.
 func (v *Var) PopBinding() {
-	v.mu.Lock()
-	defer v.mu.Unlock()
+	bindingsMu.Lock()
+	defer bindingsMu.Unlock()
 	if len(v.bindings) > 0 {
 		v.bindings = v.bindings[:len(v.bindings)-1]
 	}
+	if len(v.bindings) == 0 {
+		delete(activeVars, v)
+	}
+}
+
+func SnapshotBindings() BindingSnapshot {
+	bindingsMu.Lock()
+	defer bindingsMu.Unlock()
+	snap := BindingSnapshot{}
+	for v := range activeVars {
+		if len(v.bindings) == 0 {
+			continue
+		}
+		bs := make([]Value, len(v.bindings))
+		copy(bs, v.bindings)
+		snap[v] = bs
+	}
+	return snap
+}
+
+func RunWithBindings(snap BindingSnapshot, fn func() (Value, error)) (Value, error) {
+	bindingsMu.Lock()
+	saved := BindingSnapshot{}
+	for v := range activeVars {
+		bs := make([]Value, len(v.bindings))
+		copy(bs, v.bindings)
+		saved[v] = bs
+	}
+	for v := range snap {
+		if _, ok := saved[v]; !ok {
+			saved[v] = nil
+		}
+	}
+	for v := range saved {
+		if bs, ok := snap[v]; ok {
+			v.bindings = append([]Value(nil), bs...)
+			if len(v.bindings) > 0 {
+				activeVars[v] = struct{}{}
+			} else {
+				delete(activeVars, v)
+			}
+		} else {
+			v.bindings = nil
+			delete(activeVars, v)
+		}
+	}
+	bindingsMu.Unlock()
+
+	out, err := fn()
+
+	bindingsMu.Lock()
+	for v, bs := range saved {
+		v.bindings = append([]Value(nil), bs...)
+		if len(v.bindings) > 0 {
+			activeVars[v] = struct{}{}
+		} else {
+			delete(activeVars, v)
+		}
+	}
+	bindingsMu.Unlock()
+	return out, err
 }
 
 func (v *Var) notifyWatches(oldVal, newVal Value) error {

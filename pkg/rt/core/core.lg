@@ -461,6 +461,9 @@
                     (cons 'do (concat-list (vec pops) (list 'binding__result))))
               nil)))))
 
+(defmacro bound-fn [& fntail]
+  (list 'bound-fn* (cons 'fn fntail)))
+
 (defmacro dotimes
   [bindings & body]
   (let [i (first bindings)

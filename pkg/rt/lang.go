@@ -3644,6 +3644,26 @@ func installLangNS() {
 		return vm.NIL, nil
 	})
 
+	boundFnStar, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("bound-fn* expects 1 arg")
+		}
+		fn, ok := vs[0].(vm.Fn)
+		if !ok {
+			return vm.NIL, fmt.Errorf("bound-fn* expected Fn")
+		}
+		snap := vm.SnapshotBindings()
+		if len(snap) == 0 {
+			return fn, nil
+		}
+		wrapped, _ := vm.NativeFnType.Wrap(func(args []vm.Value) (vm.Value, error) {
+			return vm.RunWithBindings(snap, func() (vm.Value, error) {
+				return fn.Invoke(args)
+			})
+		})
+		return wrapped, nil
+	})
+
 	withMeta, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 2 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
@@ -4222,9 +4242,12 @@ func installLangNS() {
 		if !ok {
 			return vm.NIL, fmt.Errorf("future* expected Fn")
 		}
+		snap := vm.SnapshotBindings()
 		p := vm.NewPromise()
 		go func() {
-			v, err := fn.Invoke(nil)
+			v, err := vm.RunWithBindings(snap, func() (vm.Value, error) {
+				return fn.Invoke(nil)
+			})
 			if err != nil {
 				p.Deliver(vm.NIL)
 			} else {
@@ -4701,6 +4724,7 @@ func installLangNS() {
 	ns.Def("meta", metaf)
 	ns.Def("push-binding!", pushBinding)
 	ns.Def("pop-binding!", popBinding)
+	ns.Def("bound-fn*", boundFnStar)
 
 	ns.Def("throw", throwf)
 	ns.Def("ex-info", exInfo)

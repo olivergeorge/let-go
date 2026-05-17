@@ -29,9 +29,6 @@ const memLimitBytes = 512 * 1024 * 1024
 // Tests that pass but appear here will cause an error so the list stays current.
 var knownFailing = map[string]bool{
 	"bigint":         true, // BigInt promotion at Long range boundary
-	"binding":        true, // thread binding propagation to futures
-	"bound_fn":       true, // bound-fn shim doesn't propagate dyn vars
-	"bound_fn_star":  true, // bound-fn* shim is identity
 	"dissoc":         true, // dissoc on records has quirky behavior
 	"plus_squote":    true, // +' BigInt promotion at Long boundary
 	"realized_qmark": true, // realized? semantics mismatch
