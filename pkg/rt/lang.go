@@ -419,6 +419,9 @@ func valueEquals(a, b vm.Value) bool {
 	if isNilValue(a) || isNilValue(b) {
 		return false
 	}
+	if vm.IsNumber(a) && vm.IsNumber(b) {
+		return vm.NumEq(a, b)
+	}
 	switch av := a.(type) {
 	case *vm.Range:
 		if av == b {
@@ -630,8 +633,13 @@ func isNilValue(v vm.Value) bool {
 }
 
 func isNaNValue(v vm.Value) bool {
-	f, ok := v.(vm.Float)
-	return ok && math.IsNaN(float64(f))
+	if f, ok := v.(vm.Float); ok {
+		return math.IsNaN(float64(f))
+	}
+	if f, ok := v.(vm.Float32); ok {
+		return math.IsNaN(float64(f))
+	}
+	return false
 }
 
 func nilListEquivalent(a, b vm.Value) bool {
@@ -2605,7 +2613,7 @@ func installLangNS() {
 		if math.IsInf(float64(f32), 0) {
 			return vm.NIL, fmt.Errorf("%s can't be coerced to float", vs[0])
 		}
-		return vm.Float(float64(f32)), nil
+		return vm.Float32(float64(f32)), nil
 	})
 
 	doublef, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
@@ -2630,7 +2638,11 @@ func installLangNS() {
 		if len(vs) != 1 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
 		}
-		_, ok := vs[0].(vm.Float)
+		switch vs[0].(type) {
+		case vm.Float, vm.Float32:
+			return vm.TRUE, nil
+		}
+		ok := false
 		return vm.Boolean(ok), nil
 	})
 
@@ -4524,7 +4536,7 @@ func installLangNS() {
 		}
 	})
 
-	// double? — alias for float?
+	// double? — true only for float64 values; float? accepts float32 and float64.
 	isDouble, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 1 {
 			return vm.FALSE, nil
@@ -5177,6 +5189,8 @@ func installLangNS() {
 		}
 		switch v := vs[0].(type) {
 		case vm.Float:
+			return vm.Boolean(math.IsNaN(float64(v))), nil
+		case vm.Float32:
 			return vm.Boolean(math.IsNaN(float64(v))), nil
 		case vm.Int, *vm.BigInt, *vm.Ratio, *vm.BigDecimal:
 			return vm.FALSE, nil

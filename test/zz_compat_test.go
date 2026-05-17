@@ -33,7 +33,6 @@ var knownFailing = map[string]bool{
 	"with_precision": true, // with-precision is a no-op; results don't round
 	"case":           true, // case macro complex matching
 	"dec":            true, // dec overflow/type coercion
-	"double_qmark":   true, // no float32/float64 distinction
 	"inc":            true, // overflow untested assertion
 	"reduce":         true, // reduce interop edge cases
 	"short":          true, // short coercion

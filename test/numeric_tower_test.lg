@@ -105,6 +105,9 @@
 
   (testing "float? predicate"
     (is (float? 3.14))
+    (is (float? (float 3.14)))
+    (is (not (double? (float 3.14))))
+    (is (double? (double 3.14)))
     (is (not (float? 42)))
     (is (not (float? "3.14"))))
 

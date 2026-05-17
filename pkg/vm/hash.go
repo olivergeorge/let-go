@@ -204,7 +204,7 @@ func valueEquiv(a, b Value) bool {
 // isComparable returns true if the Value can be safely compared with ==.
 func isComparable(v Value) bool {
 	switch v.(type) {
-	case Int, Float, String, Keyword, Symbol, Boolean, Char, *Nil, *Var, *Namespace,
+	case Int, Float, Float32, String, Keyword, Symbol, Boolean, Char, *Nil, *Var, *Namespace,
 		*Atom, *NativeFn, *Func, *Closure, *MultiArityFn, *MultiFn, *Protocol:
 		return true
 	default:
