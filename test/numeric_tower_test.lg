@@ -78,6 +78,16 @@
           false
           (catch e true)))))
 
+(deftest long-coercion
+  (testing "long coercion accepts full 64-bit range"
+    (is (= 9223372036854775807 (long 9223372036854775807)))
+    (is (= -9223372036854775808 (long -9223372036854775808)))
+    (is (= -4611686018427387904 (long (/ -9223372036854775808 2))))
+    (is (try
+          (long 9223372036854775808N)
+          false
+          (catch e true)))))
+
 (deftest numeric-predicates
   (testing "number? recognizes both int and float"
     (is (number? 42))

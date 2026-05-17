@@ -162,12 +162,35 @@
 (defn inc [x] (+ x 1))
 (defn dec [x] (- x 1))
 
-;; Auto-promoting variants (no overflow in let-go, so just aliases)
-(def inc' inc)
-(def dec' dec)
-(defn +' [& args] (apply + args))
-(defn -' [& args] (apply - args))
-(defn *' [& args] (apply * args))
+;; Auto-promoting exact variants.
+(defn +' 
+  ([] 0)
+  ([x] x)
+  ([x y]
+   (try
+     (+ x y)
+     (catch e (+ (bigint x) (bigint y)))))
+  ([x y & more]
+   (reduce +' (+' x y) more)))
+(defn -'
+  ([x] (try (- x) (catch e (- (bigint x)))))
+  ([x y]
+   (try
+     (- x y)
+     (catch e (- (bigint x) (bigint y)))))
+  ([x y & more]
+   (reduce -' (-' x y) more)))
+(defn *'
+  ([] 1)
+  ([x] x)
+  ([x y]
+   (try
+     (* x y)
+     (catch e (* (bigint x) (bigint y)))))
+  ([x y & more]
+   (reduce *' (*' x y) more)))
+(defn inc' [x] (+' x 1))
+(defn dec' [x] (-' x 1))
 
 (defn num [x]
   (if (nil? x) nil
@@ -188,7 +211,6 @@
 (defn rational? [x] (or (int? x) (bigint? x) (ratio? x) (decimal? x)))
 
 ;; type coercion aliases
-(def long int)
 (defn byte [x]
   (if (and (>= x -128) (<= x 127))
     (int x)

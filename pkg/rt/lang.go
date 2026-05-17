@@ -2547,6 +2547,46 @@ func installLangNS() {
 		}
 	})
 
+	longf, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
+		if len(vs) != 1 {
+			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
+		}
+		const minInt64 = float64(-9223372036854775808)
+		const maxInt64 = float64(9223372036854775807)
+		coerce := func(f float64) (vm.Value, error) {
+			if f < minInt64 || f > maxInt64 {
+				return vm.NIL, fmt.Errorf("%s can't be coerced to long", vs[0])
+			}
+			return vm.Int(int64(math.Trunc(f))), nil
+		}
+		switch v := vs[0].(type) {
+		case vm.Int:
+			return v, nil
+		case vm.Float:
+			return coerce(float64(v))
+		case vm.Char:
+			return vm.Int(int(v)), nil
+		case *vm.BigInt:
+			if !v.Val().IsInt64() {
+				return vm.NIL, fmt.Errorf("%s can't be coerced to long", vs[0])
+			}
+			return vm.Int(v.Val().Int64()), nil
+		case *vm.BigDecimal:
+			f, _ := v.Val().Float64()
+			return coerce(f)
+		case *vm.Ratio:
+			f, _ := v.Val().Float64()
+			return coerce(f)
+		case vm.Boolean:
+			if bool(v) {
+				return vm.MakeInt(1), nil
+			}
+			return vm.MakeInt(0), nil
+		default:
+			return vm.NIL, fmt.Errorf("%s can't be coerced to long", vs[0])
+		}
+	})
+
 	floatf, err := vm.NativeFnType.Wrap(func(vs []vm.Value) (vm.Value, error) {
 		if len(vs) != 1 {
 			return vm.NIL, fmt.Errorf("wrong number of arguments %d", len(vs))
@@ -4702,7 +4742,7 @@ func installLangNS() {
 	ns.Def("<!!", changet)
 
 	ns.Def("int", intf)
-	ns.Def("long", intf)
+	ns.Def("long", longf)
 	ns.Def("byte", intf)
 	ns.Def("short", intf)
 	ns.Def("float", floatf)
