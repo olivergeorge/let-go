@@ -1853,6 +1853,162 @@
                             (step (map rest ss)))))))]
      (pmap #(apply f %) (step (cons coll colls))))))
 
+;; --- Hierarchies ---
+
+;; Shape predicate — checks the three top-level keys are maps. Does not
+;; recurse into sub-map values; derive/underive trust their callers (or
+;; themselves, in the global case) to maintain set-valued submaps.
+(defn ^:private hierarchy-shape? [h]
+  (and (map? h)
+       (map? (:parents h))
+       (map? (:ancestors h))
+       (map? (:descendants h))))
+
+(defn make-hierarchy
+  "Creates a hierarchy object for use with derive, ancestors etc."
+  []
+  {:parents {} :descendants {} :ancestors {}})
+
+;; Held as a non-dynamic var root, matching Clojure JVM. The 2-arg
+;; mutators below go through `alter-var-root`, which reads the var's
+;; root binding (bypassing any dynamic frame) and writes the result
+;; back. Marked private to keep the public namespace surface clean —
+;; mutate through derive / underive, not by reaching into the var.
+(def ^:private global-hierarchy (make-hierarchy))
+
+(defn derive
+  "Establishes a parent/child relationship between tag and parent.
+
+  2-arity form mutates the global hierarchy. Both tag and parent must
+  be namespace-qualified keywords or symbols. Returns nil.
+
+  3-arity form is pure. Tag and parent must be keywords or symbols;
+  namespace is not required. Returns the new hierarchy, or h unchanged
+  if the edge is already present. The 2-arity namespace requirement
+  exists because the global hierarchy is shared mutable state across
+  the runtime; the 3-arity operates on a local map that the caller
+  owns, so the choice of namespacing is left to them — matches
+  clojure.core/derive."
+  ([tag parent]
+   (when-not (ident? parent) (throw (str "parent must be a keyword or symbol, got " parent)))
+   (when-not (namespace parent) (throw (str "parent must be namespace-qualified, got " parent)))
+   (when-not (ident? tag) (throw (str "tag must be a keyword or symbol, got " tag)))
+   (when-not (namespace tag) (throw (str "tag must be namespace-qualified, got " tag)))
+   (alter-var-root #'global-hierarchy derive tag parent)
+   nil)
+  ([h tag parent]
+   (when-not (hierarchy-shape? h) (throw (str "Invalid hierarchy: " h)))
+   (when-not (ident? tag) (throw (str "tag must be a keyword or symbol, got " tag)))
+   (when-not (ident? parent) (throw (str "parent must be a keyword or symbol, got " parent)))
+   (when (= tag parent) (throw (str "Cyclic derivation: " tag " has " parent " as ancestor")))
+   (let [parent-map (:parents h)
+         desc-map   (:descendants h)
+         anc-map    (:ancestors h)
+         ;; For each k in (cons source source's-descendants-or-ancestors),
+         ;; extend targets[k] with target and target's existing targets.
+         ;; Used both ways: extending ancestors of tag-and-its-descendants,
+         ;; and extending descendants of parent-and-its-ancestors.
+         update-closure
+           (fn [m source sources target targets]
+             (reduce
+               (fn [ret k]
+                 (assoc ret k
+                        (reduce conj
+                                (get targets k #{})
+                                (cons target (get targets target)))))
+               m
+               (cons source (get sources source))))]
+     (if (contains? (get parent-map tag #{}) parent)
+       h
+       (do
+         (when (contains? (get anc-map tag #{}) parent)
+           (throw (str tag " already has " parent " as ancestor")))
+         (when (contains? (get anc-map parent #{}) tag)
+           (throw (str "Cyclic derivation: " parent " has " tag " as ancestor")))
+         {:parents     (assoc parent-map tag (conj (get parent-map tag #{}) parent))
+          :ancestors   (update-closure anc-map  tag    desc-map parent anc-map)
+          :descendants (update-closure desc-map parent anc-map  tag    desc-map)})))))
+
+(defn underive
+  "Removes a parent/child relationship between tag and parent.
+
+  2-arity form mutates the global hierarchy. Lenient: garbage input
+  is a no-op. Returns nil.
+
+  3-arity form is pure. Returns the new hierarchy, or h unchanged if
+  the edge doesn't exist. Validates h shape."
+  ([tag parent]
+   (alter-var-root #'global-hierarchy underive tag parent)
+   nil)
+  ([h tag parent]
+   (when-not (hierarchy-shape? h) (throw (str "Invalid hierarchy: " h)))
+   ;; Mirrors clojure.core/underive's rebuild strategy: remove the direct
+   ;; edge, then replay every remaining edge into a fresh hierarchy via
+   ;; public derive. Aligns with upstream for the same perf/simplicity
+   ;; trade Halloway accepted in 2010 — see
+   ;; https://groups.google.com/g/clojure/c/C3D4vxbeIhY (Lachlan's report;
+   ;; "I would prefer the simpler fix shown below, unless anybody pops
+   ;; up with a real-world performance-critical use case").
+   ;;
+   ;; Latent behaviour to be aware of: when :parents legally contains a
+   ;; redundant direct edge X→Z alongside a transitive path X→Y→Z
+   ;; (derive permits this when each call was non-redundant at the time),
+   ;; this replay can throw "X already has Z as ancestor" depending on
+   ;; map/set iteration order. Empirically reproduces on Clojure 1.12.4
+   ;; in ~83% of random tag permutations — see
+   ;; backlog/research/260517-1530-jvm-redundant-edge-repro/. An
+   ;; alternative implementation that adds a private unchecked
+   ;; add-derivation helper and bypasses the redundancy check during
+   ;; replay is preserved on branch feat-hierarchies-data-with-underive-fix
+   ;; in case a perf-equivalent fork is ever wanted.
+   (let [parent-map (:parents h)]
+     (if (contains? (get parent-map tag #{}) parent)
+       (let [remaining-parents (disj (get parent-map tag) parent)
+             new-parent-map    (if (not-empty remaining-parents)
+                                 (assoc parent-map tag remaining-parents)
+                                 (dissoc parent-map tag))]
+         (reduce
+          (fn [acc [child ps]]
+            (reduce (fn [a p] (derive a child p)) acc ps))
+          (make-hierarchy)
+          new-parent-map))
+       h))))
+
+(defn parents
+  "Returns the immediate parents of tag (a non-empty set) or nil."
+  ([tag] (parents global-hierarchy tag))
+  ([h tag] (not-empty (get (:parents h) tag))))
+
+(defn ancestors
+  "Returns the immediate and indirect parents of tag (a non-empty set) or nil."
+  ([tag] (ancestors global-hierarchy tag))
+  ([h tag] (not-empty (get (:ancestors h) tag))))
+
+(defn descendants
+  "Returns the immediate and indirect children of tag (a non-empty set) or nil."
+  ([tag] (descendants global-hierarchy tag))
+  ([h tag] (not-empty (get (:descendants h) tag))))
+
+(defn isa?
+  "Returns true if (= child parent), or child is directly or indirectly
+  derived from parent via derive. h must be a hierarchy obtained from
+  make-hierarchy; defaults to the global hierarchy.
+
+  Tuple form: when both child and parent are vectors of the same length,
+  tests pairwise — useful for multi-arg multimethod dispatch values."
+  ([child parent] (isa? global-hierarchy child parent))
+  ([h child parent]
+   (or (= child parent)
+       (contains? (get (:ancestors h) child) parent)
+       (and (vector? parent) (vector? child)
+            (let [n (count parent)]
+              (and (= n (count child))
+                   (loop [i 0]
+                     (cond
+                       (= i n) true
+                       (isa? h (nth child i) (nth parent i)) (recur (inc i))
+                       :else false))))))))
+
 ;; --- Multimethods ---
 
 ;; (defmulti name dispatch-fn)

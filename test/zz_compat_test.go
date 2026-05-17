@@ -30,20 +30,19 @@ const memLimitBytes = 512 * 1024 * 1024
 var knownFailing = map[string]bool{
 	"add_watch":      true, // agent stub is synchronous; some assertions need real agent behavior
 	"remove_watch":   true, // ditto
-	"ancestors":      true, // hierarchy stub returns empty
-	"parents":        true, // hierarchy stub returns nil
+	"ancestors":      true, // vendored compat test has top-level (def AncestorT Object) via the :default reader-conditional branch; needs upstream clojure-test-suite to add a :lg branch
+	"parents":        true, // vendored compat test references Object/String via :default reader-conditional branch; needs upstream :lg branch in clojure-test-suite
 	"atom":           true, // atom validator/meta edge cases
 	"bigint":         true, // BigInt promotion at Long range boundary
 	"binding":        true, // thread binding propagation to futures
 	"bound_fn":       true, // bound-fn shim doesn't propagate dyn vars
 	"bound_fn_star":  true, // bound-fn* shim is identity
-	"derive":         true, // hierarchy stub has no real behavior
-	"descendants":    true, // hierarchy stub has no real behavior
+	"derive":         true, // one are-row uses String via :default reader-conditional branch; the other two rows pass — same lift condition as ancestors/parents/descendants
+	"descendants":    true, // vendored compat test references Object via :default reader-conditional branch; needs upstream :lg branch in clojure-test-suite
 	"disj_bang":      true, // disj! shim falls through to disj
 	"dissoc":         true, // dissoc on records has quirky behavior
 	"empty":          true, // empty on deftype/non-coll edge cases
 	"realized_qmark": true, // realized? semantics mismatch
-	"underive":       true, // hierarchy stub returns empty
 	"with_precision": true, // with-precision is a no-op; results don't round
 	"case":           true, // case macro complex matching
 	"compare":        true, // compare cross-type issues
